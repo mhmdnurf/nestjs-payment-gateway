@@ -1,237 +1,87 @@
 # NestJS Payment API - AI Agent Guide
 
-This guide helps AI agents understand the architecture, conventions, and workflows for the payment-api project.
+This file is the primary instruction source for coding agents in this repository. Keep it concise, factual, and aligned with the current codebase.
 
-## Quick Start Commands
+## Scope And References
+
+- Use this file for day-to-day execution rules.
+- Link to project docs for details instead of duplicating long instructions:
+  - [README.md](README.md)
+  - [prisma/schema.prisma](prisma/schema.prisma)
+  - [prisma.config.ts](prisma.config.ts)
+
+## Verified Commands
 
 ```bash
-# Installation & setup
+# Install
 pnpm install
 
-# Development
-pnpm run start:dev        # Watch mode
-pnpm run start:debug      # Debug mode
-pnpm run start:prod       # Production (requires build first)
+# Dev / run
+pnpm run start:dev
+pnpm run start:debug
+pnpm run build && pnpm run start:prod
 
-# Build & compilation
-pnpm run build            # SWC compilation
+# Quality
+pnpm run lint
+pnpm run format
 
-# Testing
-pnpm run test             # Unit tests (Jest)
-pnpm run test:watch       # Watch mode
-pnpm run test:cov         # Coverage report
-pnpm run test:e2e         # End-to-end tests
-
-# Code quality
-pnpm run lint             # Fix linting issues (ESLint + Prettier)
-pnpm run format           # Format code with Prettier
-```
-
-## Project Structure
-
-```
-src/
-├── main.ts                    # Entry point (NestJS bootstrap)
-├── app.module.ts              # Root module (imports, controllers, providers)
-├── app.controller.ts          # HTTP route handlers
-├── app.service.ts             # Business logic & services
-├── app.controller.spec.ts     # Unit tests
-test/
-├── app.e2e-spec.ts           # End-to-end tests
-└── jest-e2e.json             # E2E test configuration
-```
-
-## Architecture & Design Patterns
-
-### 1. Module Organization (NestJS DI Pattern)
-
-The project uses feature modules following NestJS conventions:
-
-- **@Module()** decorator defines module scope
-- **imports**: External/shared modules
-- **controllers**: HTTP handlers
-- **providers**: Injectable services (singletons by default)
-
-**Example structure for new features:**
-
-```typescript
-@Module({
-  imports: [
-    /* dependencies */
-  ],
-  controllers: [PaymentsController],
-  providers: [PaymentsService, PaymentGatewayAdapter],
-  exports: [PaymentsService], // For use by other modules
-})
-export class PaymentsModule {}
-```
-
-### 2. Service Layer Pattern
-
-Services contain business logic and are injected via constructor:
-
-- Use `@Injectable()` decorator
-- Constructor-based dependency injection
-- Methods implement domain logic
-- Tests use `Test.createTestingModule()` for isolation
-
-### 3. Controller Pattern
-
-Controllers handle HTTP requests and delegate to services:
-
-- Use `@Controller('route')` decorator
-- `@Get()`, `@Post()`, `@Put()`, `@Delete()` for HTTP methods
-- Inject services via constructor
-- Keep controllers thin - delegate logic to services
-
-### 4. Error Handling
-
-- Create custom exceptions for domain errors (e.g., `PaymentFailedException`)
-- Use NestJS exception filters for consistent error responses
-- Services throw meaningful errors; controllers don't catch them (let filters handle)
-
-### 5. Testing Conventions
-
-**Unit Tests (Jest):**
-
-- File pattern: `*.spec.ts`
-- Use `Test.createTestingModule()` for isolated testing
-- Mock dependencies with `@nestjs/testing`
-
-**E2E Tests:**
-
-- File pattern: `test/**/*.e2e-spec.ts`
-- Separate Jest config: `test/jest-e2e.json`
-- Use Supertest for HTTP assertions
-
-## Key NestJS Conventions to Follow
-
-| Pattern        | File              | Example                       |
-| -------------- | ----------------- | ----------------------------- |
-| **Module**     | `*.module.ts`     | `payments.module.ts`          |
-| **Service**    | `*.service.ts`    | `payments.service.ts`         |
-| **Controller** | `*.controller.ts` | `payments.controller.ts`      |
-| **Unit Tests** | `*.spec.ts`       | `payments.service.spec.ts`    |
-| **DTO**        | `*.dto.ts`        | `create-payment.dto.ts`       |
-| **Exception**  | `*.exception.ts`  | `payment-failed.exception.ts` |
-
-## Environment Configuration
-
-- **Port**: `process.env.PORT ?? 3000` (configurable via environment)
-- **Node Version**: TypeScript target is ES2021 (async/await, decorators supported)
-- **Package Manager**: Uses **pnpm** for dependency management
-
-## Code Quality Standards
-
-- **Linter**: ESLint (flat config format in `eslint.config.mjs`)
-- **Formatter**: Prettier
-- **TypeScript**: Strict mode enabled (`strictNullChecks: true`)
-- **Rules**: No floating promises (critical for async payment operations)
-
-## Common Development Scenarios
-
-### Adding a New Feature Module
-
-1. Create `src/features/[feature]/` directory
-2. Create `[feature].module.ts`, `[feature].controller.ts`, `[feature].service.ts`
-3. Create `[feature].service.spec.ts` for unit tests
-4. Import module in `AppModule`
-5. Run `pnpm run lint` to fix formatting
-6. Run `pnpm run test` to verify
-
-### Running Tests
-
-```bash
-# All unit tests
+# Tests
 pnpm run test
-
-# Specific test file
-pnpm run test -- payments.service
-
-# Watch mode for development
 pnpm run test:watch
-
-# With coverage
 pnpm run test:cov
+pnpm run test:e2e
+
+# Prisma
+pnpm exec prisma generate
+pnpm exec prisma migrate dev --name <change-name>
+pnpm exec prisma migrate status
 ```
 
-### Building for Production
+## Current Architecture Snapshot
 
-```bash
-# Build TypeScript to JavaScript
-pnpm run build
+- Root module: `src/app.module.ts` imports `AuthModule`.
+- Existing feature module: `src/auth/` (controller + service + module).
+- Prisma schema defines `User`, `RefreshToken`, and `Session` models.
+- Prisma client output is generated to `src/generated/prisma`.
 
-# Run production build
-pnpm run start:prod
-```
+When adding a new domain module, follow the existing `src/<feature>/` style used by `src/auth/` unless the project structure is intentionally changed.
 
-## Payment-Specific Considerations
+## Coding Conventions For Agents
 
-When implementing payment processing features:
+- Keep controllers thin; place business logic in services.
+- Use constructor injection for dependencies.
+- Prefer DTO classes for request/response contracts.
+- Add or update tests with each behavior change.
+- For async workflows, handle rejected promises explicitly (lint treats floating promises as warnings, but treat them as correctness issues).
 
-- **DTOs**: Strictly type payment requests/responses (CreatePaymentDto, PaymentResponseDto)
-- **Service Layer**: Handle validation, business logic, and external gateway calls
-- **Error Handling**: Custom exceptions for declined payments, insufficient funds, etc.
-- **Transactions**: Ensure idempotency for payment retry scenarios
-- **Testing**: Mock payment gateway responses and test failure paths
-- **Logging**: Track payment lifecycle (initiated, processing, completed, failed)
+## Database And Environment Notes
 
-## AI Agent Skills
+- `DATABASE_URL` is required for Prisma operations.
+- Port is read from `process.env.PORT` with `3000` as fallback.
+- If schema changes, run migration + generate before running related tests.
 
-The following skills automate common development tasks for this payment API:
+## Testing Expectations
 
-### 1. Scaffold NestJS Module
+- Unit tests live next to source as `*.spec.ts`.
+- E2E tests use `test/jest-e2e.json` and run with `pnpm run test:e2e`.
+- Prefer focused tests for:
+  - service-layer logic
+  - error paths
+  - auth/session/token flows when implemented
 
-**File**: [.copilot/skills/scaffold-nestjs-module.md](.copilot/skills/scaffold-nestjs-module.md)
+## Known Project Pitfalls
 
-Generates a complete feature module structure with module, controller, service, DTOs, and tests.
+- `package.json` uses `"type": "module"`; avoid changing module-system settings unless required.
+- `start:prod` runs `dist/main`, so build must exist first.
+- Prisma migrations directory may be empty in early-stage setups; create the first migration when introducing DB-backed features.
 
-```bash
-@skill scaffold-nestjs-module payments
-@skill scaffold-nestjs-module transactions --dto CreateTransactionDto,UpdateTransactionDto
-```
+## Available Agent Skills
 
-**Output**: Module at `src/features/[name]/` with all boilerplate code and tests
+- [.copilot/skills/scaffold-nestjs-module.md](.copilot/skills/scaffold-nestjs-module.md)
+  - Scaffolds a NestJS module with controller/service/tests.
+- [.copilot/skills/test-payment-scenarios.md](.copilot/skills/test-payment-scenarios.md)
+  - Generates payment-focused test scenarios.
+- [.copilot/skills/register-module.md](.copilot/skills/register-module.md)
+  - Helps register a module in a parent module.
 
-### 2. Payment Domain Testing Patterns
-
-**File**: [.copilot/skills/test-payment-scenarios.md](.copilot/skills/test-payment-scenarios.md)
-
-Generates comprehensive test cases for payment scenarios including error paths, retries, and idempotency.
-
-```bash
-@skill test-payment-scenarios payments
-@skill test-payment-scenarios payments --scenario declined-card,insufficient-funds,timeout
-```
-
-**Output**: Payment-specific Jest test patterns with mock gateways and full coverage
-
-### 3. Auto-Register NestJS Module
-
-**File**: [.copilot/skills/register-module.md](.copilot/skills/register-module.md)
-
-Automatically registers new modules in parent AppModule or feature modules.
-
-```bash
-@skill register-module payments
-@skill register-module transactions PaymentsModule --with-exports
-```
-
-**Output**: Module automatically added to parent module imports with proper formatting
-
-## Additional Resources
-
-- [NestJS Official Documentation](https://docs.nestjs.com)
-- [NestJS Best Practices](https://docs.nestjs.com/techniques/database)
-- Project [README.md](README.md) for general setup
-- [Jest Documentation](https://jestjs.io) for testing details
-
-## Notes for AI Agents
-
-- This is a starter template ready for payment processing features
-- Follow the existing module/service/controller structure for consistency
-- Always write tests alongside new features (use `Test.createTestingModule()`)
-- Use strict TypeScript for payment-related code
-- DTOs are essential for payment API contracts
-- Consider custom exceptions for payment domain errors
-- Environment variables are used for runtime configuration
+Use these skills as accelerators, then verify generated output against current folder structure and naming conventions.
