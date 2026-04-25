@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uniq_active_session_per_user" ON "sessions" ("userId") WHERE "revokedAt" IS NULL

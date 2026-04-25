@@ -13,11 +13,23 @@ import { createHash, randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
-  private readonly maxFailedLogin = Number(process.env.AUTH_MAX_FAILED_LOGIN);
-  private readonly lockMinutes = Number(process.env.AUTH_LOCK_MINUTES);
+  private readonly maxFailedLogin = this.parseNumberEnv(
+    process.env.AUTH_MAX_FAILED_LOGIN,
+    5,
+  );
+  private readonly lockMinutes = this.parseNumberEnv(
+    process.env.AUTH_LOCK_MINUTES,
+    15,
+  );
   private readonly accessSecret = process.env.JWT_ACCESS_SECRET!;
-  private readonly accessExpiresIn = Number(process.env.JWT_ACCESS_EXPIRES_IN);
-  private readonly refreshDays = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS);
+  private readonly accessExpiresIn = this.parseNumberEnv(
+    process.env.JWT_ACCESS_EXPIRES_IN,
+    900,
+  );
+  private readonly refreshDays = this.parseNumberEnv(
+    process.env.REFRESH_TOKEN_EXPIRES_DAYS,
+    7,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -112,6 +124,25 @@ export class AuthService {
     );
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          session: {
+            userId: user.id,
+            revokedAt: null,
+          },
+          revokedAt: null,
+        },
+        data: { revokedAt: now },
+      });
+
+      await tx.session.updateMany({
+        where: {
+          userId: user.id,
+          revokedAt: null,
+        },
+        data: { revokedAt: now },
+      });
+
       const session = await tx.session.create({
         data: {
           tokenHash: sessionTokenHash,
@@ -155,5 +186,10 @@ export class AuthService {
 
   private hashToken(raw: string): string {
     return createHash('sha256').update(raw).digest('hex');
+  }
+
+  private parseNumberEnv(value: string | undefined, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
   }
 }
