@@ -1,7 +1,12 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Ip, Post, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, RegisterResponseDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, LoginResponseDto } from './dto/login.dto';
+import {
+  RefreshTokenDto,
+  RefreshTokenResponseDto,
+} from './dto/refresh-token.dto';
+import type { Request } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -13,7 +18,22 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() data: LoginDto) {
-    return this.authService.login(data);
+  async login(
+    @Body() data: LoginDto,
+    @Req() req: Request,
+    @Ip() ip: string,
+  ): Promise<LoginResponseDto> {
+    const userAgent = req.get('user-agent') ?? null;
+    return this.authService.login(data, {
+      userAgent,
+      ipAddress: ip?.trim() ? ip : null,
+    });
+  }
+
+  @Post('refresh')
+  async refresh(
+    @Body() data: RefreshTokenDto,
+  ): Promise<RefreshTokenResponseDto> {
+    return this.authService.refreshToken(data);
   }
 }
