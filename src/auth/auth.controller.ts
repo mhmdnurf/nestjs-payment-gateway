@@ -8,6 +8,10 @@ import {
 } from './dto/refresh-token.dto';
 import type { Request } from 'express';
 import { VerifyEmailDto, VerifyEmailResponseDto } from './dto/verify-email.dto';
+import {
+  ResendVerificationDto,
+  ResendVerificationResponseDto,
+} from './dto/resend-verification.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -23,6 +27,13 @@ export class AuthController {
     @Body() data: VerifyEmailDto,
   ): Promise<VerifyEmailResponseDto> {
     return this.authService.verifyEmail(data);
+  }
+
+  @Post('resend-verification')
+  async resendVerification(
+    @Body() data: ResendVerificationDto,
+  ): Promise<ResendVerificationResponseDto> {
+    return this.authService.resendVerification(data);
   }
 
   @Post('login')

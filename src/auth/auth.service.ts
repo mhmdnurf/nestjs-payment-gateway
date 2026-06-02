@@ -18,6 +18,10 @@ import {
 import { Prisma } from 'src/generated/prisma/client';
 import { VerifyEmailDto, VerifyEmailResponseDto } from './dto/verify-email.dto';
 import { MailService } from 'src/mail/mail.service';
+import {
+  ResendVerificationDto,
+  ResendVerificationResponseDto,
+} from './dto/resend-verification.dto';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -115,9 +119,16 @@ export class AuthService {
       return createdUser;
     } catch (error: unknown) {
       if (createdUser) {
-        await this.prisma.user.delete({
-          where: { id: createdUser.id },
-        });
+        try {
+          await this.prisma.user.delete({
+            where: { id: createdUser.id },
+          });
+        } catch (rollbackError: unknown) {
+          console.error('Failed to rollback registered user', {
+            userId: createdUser.id,
+            rollbackError,
+          });
+        }
       }
 
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -127,7 +138,7 @@ export class AuthService {
       }
 
       throw new InternalServerErrorException(
-        'Failed to send verification email. Please try again later.',
+        'Registration failed and was rolled back',
       );
     }
   }
@@ -181,6 +192,70 @@ export class AuthService {
     };
   }
 
+  async resendVerification(
+    dto: ResendVerificationDto,
+  ): Promise<ResendVerificationResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const now = new Date();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      return {
+        message:
+          'If the account exists and is not yet verified, a verification email has been sent',
+      };
+    }
+
+    if (user.emailVerifiedAt) {
+      return {
+        message:
+          'If the account exists and is not yet verified, a verification email has been sent.',
+      };
+    }
+
+    const rawVerificationToken = randomBytes(32).toString('hex');
+    const verificationTokenHash = this.hashToken(rawVerificationToken);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.emailVerificationToken.updateMany({
+          where: {
+            userId: user.id,
+            usedAt: null,
+          },
+          data: {
+            usedAt: now,
+          },
+        });
+
+        await tx.emailVerificationToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: verificationTokenHash,
+            expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          },
+        });
+      });
+
+      await this.mailService.sendVerificationEmail(
+        user.email,
+        rawVerificationToken,
+      );
+
+      return {
+        message:
+          'If the account exists and is not yet verified, a verification email has been sent.',
+      };
+    } catch {
+      throw new InternalServerErrorException(
+        'Failed to resend verification email. Please try again later.',
+      );
+    }
+  }
+
   async login(dto: LoginDto, meta?: SessionMeta): Promise<LoginResponseDto> {
     const now = new Date();
     const username = dto.username.trim().toLowerCase();
@@ -195,12 +270,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (!user?.emailVerifiedAt) {
-      throw new UnauthorizedException('Email not verified');
+    if (!user.emailVerifiedAt) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!user.isActive) {
-      throw new ForbiddenException('Account is inactive');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     if (user.lockedUntil && user.lockedUntil > now) {
@@ -222,6 +297,10 @@ export class AuthService {
             : null,
         },
       });
+
+      if (shouldLock) {
+        throw new ForbiddenException('Account temporarily locked');
+      }
 
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -247,25 +326,6 @@ export class AuthService {
     );
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.refreshToken.updateMany({
-        where: {
-          session: {
-            userId: user.id,
-            revokedAt: null,
-          },
-          revokedAt: null,
-        },
-        data: { revokedAt: now },
-      });
-
-      await tx.session.updateMany({
-        where: {
-          userId: user.id,
-          revokedAt: null,
-        },
-        data: { revokedAt: now },
-      });
-
       const session = await tx.session.create({
         data: {
           tokenHash: sessionTokenHash,
@@ -340,23 +400,19 @@ export class AuthService {
         },
       });
 
-      if (knownToken?.session?.userId && knownToken.revokedAt) {
+      if (knownToken?.sessionId && knownToken.revokedAt) {
         await this.prisma.$transaction(async (tx) => {
           await tx.refreshToken.updateMany({
             where: {
-              session: {
-                userId: knownToken.session.userId,
-                revokedAt: null,
-              },
+              sessionId: knownToken.sessionId,
               revokedAt: null,
             },
             data: { revokedAt: now },
           });
 
-          await tx.session.updateMany({
+          await tx.session.update({
             where: {
-              userId: knownToken.session.userId,
-              revokedAt: null,
+              id: knownToken.sessionId,
             },
             data: { revokedAt: now },
           });
@@ -413,6 +469,11 @@ export class AuthService {
       await tx.refreshToken.update({
         where: { id: activeToken.id },
         data: { replacedByTokenId: nextToken.id },
+      });
+
+      await tx.session.update({
+        where: { id: activeToken.sessionId },
+        data: { lastSeenAt: now },
       });
     });
 
