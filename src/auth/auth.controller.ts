@@ -7,6 +7,7 @@ import {
   RefreshTokenResponseDto,
 } from './dto/refresh-token.dto';
 import type { Request } from 'express';
+import { VerifyEmailDto, VerifyEmailResponseDto } from './dto/verify-email.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -15,6 +16,13 @@ export class AuthController {
   @Post('register')
   async registerUser(@Body() data: RegisterDto): Promise<RegisterResponseDto> {
     return this.authService.register(data);
+  }
+
+  @Post('verify-email')
+  async verifyEmail(
+    @Body() data: VerifyEmailDto,
+  ): Promise<VerifyEmailResponseDto> {
+    return this.authService.verifyEmail(data);
   }
 
   @Post('login')

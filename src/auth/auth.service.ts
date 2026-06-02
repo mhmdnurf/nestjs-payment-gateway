@@ -16,6 +16,8 @@ import {
   RefreshTokenResponseDto,
 } from './dto/refresh-token.dto';
 import { Prisma } from 'src/generated/prisma/client';
+import { VerifyEmailDto, VerifyEmailResponseDto } from './dto/verify-email.dto';
+import { MailService } from 'src/mail/mail.service';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -33,6 +35,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {
     this.maxFailedLogin = this.getPositiveIntEnv('AUTH_MAX_FAILED_LOGIN', 5);
     this.lockMinutes = this.getPositiveIntEnv('AUTH_LOCK_MINUTES', 15);
@@ -56,33 +59,126 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const rawVerificationToken = randomBytes(32).toString('hex');
+    const verificationTokenHash = this.hashToken(rawVerificationToken);
+
+    let createdUser: RegisterResponseDto | null = null;
+
     try {
-      const user = this.prisma.user.create({
+      createdUser = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            name: dto.name?.trim() || null,
+            username,
+            isActive: false,
+          },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            role: true,
+            isActive: true,
+            emailVerifiedAt: true,
+            createdAt: true,
+          },
+        });
+
+        const now = new Date();
+
+        await tx.emailVerificationToken.updateMany({
+          where: {
+            userId: user.id,
+            usedAt: null,
+          },
+          data: {
+            usedAt: now,
+          },
+        });
+
+        await tx.emailVerificationToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: verificationTokenHash,
+            expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          },
+        });
+        return user;
+      });
+
+      await this.mailService.sendVerificationEmail(
+        createdUser.email,
+        rawVerificationToken,
+      );
+      return createdUser;
+    } catch (error: unknown) {
+      if (createdUser) {
+        await this.prisma.user.delete({
+          where: { id: createdUser.id },
+        });
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Email or username already registered!');
+        }
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to send verification email. Please try again later.',
+      );
+    }
+  }
+
+  async verifyEmail(dto: VerifyEmailDto): Promise<VerifyEmailResponseDto> {
+    const now = new Date();
+    const tokenHash = this.hashToken(dto.token);
+
+    const tokenRecord = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!tokenRecord) {
+      throw new UnauthorizedException('Invalid verification token');
+    }
+
+    if (tokenRecord.usedAt) {
+      throw new UnauthorizedException('Verification token is already used');
+    }
+
+    if (tokenRecord.expiresAt <= now) {
+      throw new UnauthorizedException('Verification token expired');
+    }
+
+    if (tokenRecord.user.emailVerifiedAt) {
+      throw new ConflictException('Email already verified');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.emailVerificationToken.update({
+        where: { id: tokenRecord.id },
         data: {
-          email,
-          password: hashedPassword,
-          name: dto.name?.trim() || null,
-          username,
-        },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          name: true,
-          role: true,
-          createdAt: true,
+          usedAt: now,
         },
       });
-      return user;
-    } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Email or username already registered!');
-      }
-      throw error;
-    }
+
+      await tx.user.update({
+        where: { id: tokenRecord.userId },
+        data: {
+          emailVerifiedAt: now,
+          isActive: true,
+        },
+      });
+    });
+
+    return {
+      message: 'Email verified successfully',
+    };
   }
 
   async login(dto: LoginDto, meta?: SessionMeta): Promise<LoginResponseDto> {
@@ -97,6 +193,14 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user?.emailVerifiedAt) {
+      throw new UnauthorizedException('Email not verified');
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenException('Account is inactive');
     }
 
     if (user.lockedUntil && user.lockedUntil > now) {

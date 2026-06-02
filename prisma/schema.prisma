@@ -25,7 +25,7 @@ model User {
   username String   @unique
   role     UserRole @default(USER)
 
-  isActive          Boolean   @default(true)
+  isActive          Boolean   @default(false)
   emailVerifiedAt   DateTime?
   passwordChangedAt DateTime?
   lastLoginAt       DateTime?
@@ -33,12 +33,29 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
-  sessions Session[]
+  sessions                Session[]
+  emailVerificationTokens EmailVerificationToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+model EmailVerificationToken {
+  id        String @id @default(cuid())
+  tokenHash String @unique
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
 }
 
 model Session {
@@ -55,7 +72,7 @@ model Session {
   revokedAt  DateTime?
   expiresAt  DateTime
 
-  refreshToken RefreshToken[]
+  refreshTokens RefreshToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
