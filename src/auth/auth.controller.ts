@@ -36,7 +36,7 @@ import {
   ChangePasswordResponseDto,
 } from './dto/change-password.dto';
 
-type AccessTokenPayload = { sub: string };
+type AccessTokenPayload = { sub: string; sessionId: string };
 
 @Controller('auth')
 export class AuthController {
@@ -114,6 +114,10 @@ export class AuthController {
     if (!req.user?.sub) {
       throw new UnauthorizedException('Invalid access token payload');
     }
-    return this.authService.changePassword(req.user.sub, data);
+    return this.authService.changePassword(
+      req.user.sub,
+      req.user.sessionId,
+      data,
+    );
   }
 }

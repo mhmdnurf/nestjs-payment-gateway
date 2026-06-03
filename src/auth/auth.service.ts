@@ -319,18 +319,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const accessToken = await this.jwtService.signAsync(
-      {
-        sub: user.id,
-        username: user.username,
-        role: user.role,
-      },
-      {
-        secret: this.accessSecret,
-        expiresIn: this.accessExpiresIn,
-      },
-    );
-
     const refreshTokenRaw = randomBytes(64).toString('hex');
     const refreshTokenHash = this.hashToken(refreshTokenRaw);
     const sessionTokenHash = this.hashToken(randomBytes(48).toString('hex'));
@@ -339,8 +327,8 @@ export class AuthService {
       now.getTime() + this.refreshDays * 24 * 60 * 60 * 1000,
     );
 
-    await this.prisma.$transaction(async (tx) => {
-      const session = await tx.session.create({
+    const session = await this.prisma.$transaction(async (tx) => {
+      const createdSession = await tx.session.create({
         data: {
           tokenHash: sessionTokenHash,
           userId: user.id,
@@ -353,7 +341,7 @@ export class AuthService {
       await tx.refreshToken.create({
         data: {
           tokenHash: refreshTokenHash,
-          sessionId: session.id,
+          sessionId: createdSession.id,
           expiresAt: refreshExpiresAt,
         },
       });
@@ -366,7 +354,21 @@ export class AuthService {
           lastLoginAt: now,
         },
       });
+      return createdSession;
     });
+
+    const accessToken = await this.jwtService.signAsync(
+      {
+        sub: user.id,
+        username: user.username,
+        role: user.role,
+        sessionId: session.id,
+      },
+      {
+        secret: this.accessSecret,
+        expiresIn: this.accessExpiresIn,
+      },
+    );
 
     return {
       accessToken,
@@ -724,6 +726,7 @@ export class AuthService {
 
   async changePassword(
     userId: string,
+    currentSessionId: string,
     dto: ChangePasswordDto,
   ): Promise<ChangePasswordResponseDto> {
     const now = new Date();
@@ -742,6 +745,12 @@ export class AuthService {
     );
 
     if (!validPassword) {
+      throw new ConflictException('Current password is incorrect');
+    }
+
+    const samePassword = await bcrypt.compare(dto.newPassword, user.password);
+
+    if (samePassword) {
       throw new ConflictException(
         'New password must be different from current password',
       );
@@ -756,6 +765,9 @@ export class AuthService {
             userId,
             revokedAt: null,
           },
+          id: {
+            not: currentSessionId,
+          },
           revokedAt: null,
         },
         data: {
@@ -767,6 +779,7 @@ export class AuthService {
         where: {
           userId,
           revokedAt: null,
+          id: { not: currentSessionId },
         },
         data: {
           revokedAt: now,

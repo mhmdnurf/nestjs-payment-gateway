@@ -12,6 +12,7 @@ type AccessTokenPayload = {
   sub: string;
   username: string;
   role: string;
+  sessionId: string;
   iat: number;
   exp: number;
 };
