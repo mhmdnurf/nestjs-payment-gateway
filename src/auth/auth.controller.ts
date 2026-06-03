@@ -14,6 +14,14 @@ import {
 } from './dto/resend-verification.dto';
 import { LogoutDto, LogoutResponseDto } from './dto/logout.dto';
 import { LogoutAllDto, LogoutAllResponseDto } from './dto/logout-all.dto';
+import {
+  ForgotPasswordDto,
+  ForgotPasswordResponseDto,
+} from './dto/forgot-password.dto';
+import {
+  ResetPasswordDto,
+  ResetPasswordResponseDto,
+} from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -66,5 +74,19 @@ export class AuthController {
   @Post('logout-all')
   async logoutAll(@Body() data: LogoutAllDto): Promise<LogoutAllResponseDto> {
     return this.authService.logoutAll(data);
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(
+    @Body() data: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    return this.authService.forgotPassword(data);
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Body() data: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    return this.authService.resetPassword(data);
   }
 }

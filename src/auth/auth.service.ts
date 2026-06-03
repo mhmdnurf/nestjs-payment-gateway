@@ -24,6 +24,14 @@ import {
 } from './dto/resend-verification.dto';
 import { LogoutDto, LogoutResponseDto } from './dto/logout.dto';
 import { LogoutAllDto } from './dto/logout-all.dto';
+import {
+  ForgotPasswordDto,
+  ForgotPasswordResponseDto,
+} from './dto/forgot-password.dto';
+import {
+  ResetPasswordDto,
+  ResetPasswordResponseDto,
+} from './dto/reset-password.dto';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -572,6 +580,141 @@ export class AuthService {
 
     return {
       message: 'Logged out from all sessions successfully',
+    };
+  }
+
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const now = new Date();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    const genericResponse = {
+      message: 'If the account exists, a password reset link has been sent',
+    };
+
+    if (!user) {
+      return genericResponse;
+    }
+
+    const rawResetToken = randomBytes(32).toString('hex');
+    const resetTokenHash = this.hashToken(rawResetToken);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.passwordResetToken.updateMany({
+          where: {
+            userId: user.id,
+            usedAt: null,
+          },
+          data: {
+            usedAt: now,
+          },
+        });
+
+        await tx.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: resetTokenHash,
+            expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          },
+        });
+      });
+
+      await this.mailService.sendPasswordResetEmail(user.email, rawResetToken);
+      return genericResponse;
+    } catch {
+      throw new InternalServerErrorException(
+        'Failed to process forgot password request. Please try again later',
+      );
+    }
+  }
+
+  async resetPassword(
+    dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    const now = new Date();
+    const tokenHash = this.hashToken(dto.token);
+
+    const tokenRecord = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!tokenRecord) {
+      throw new UnauthorizedException('Invalid password reset token');
+    }
+
+    if (tokenRecord.usedAt) {
+      throw new UnauthorizedException('Password reset token is already used');
+    }
+
+    if (tokenRecord.expiresAt <= now) {
+      throw new UnauthorizedException('Password reset token expired');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.update({
+        where: { id: tokenRecord.id },
+        data: {
+          usedAt: now,
+        },
+      });
+
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: tokenRecord.userId,
+          usedAt: null,
+        },
+        data: {
+          usedAt: now,
+        },
+      });
+
+      await tx.refreshToken.updateMany({
+        where: {
+          session: {
+            userId: tokenRecord.userId,
+            revokedAt: null,
+          },
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.session.updateMany({
+        where: {
+          userId: tokenRecord.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: tokenRecord.userId },
+        data: {
+          password: hashedPassword,
+          passwordChangedAt: now,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+    });
+
+    return {
+      message: 'Password has been reset successfully',
     };
   }
 
