@@ -1,4 +1,12 @@
-import { Body, Controller, Ip, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Ip,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, RegisterResponseDto } from './dto/register.dto';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
@@ -22,6 +30,13 @@ import {
   ResetPasswordDto,
   ResetPasswordResponseDto,
 } from './dto/reset-password.dto';
+import { JwtAccessGuard } from './guards/jwt-access.guard';
+import {
+  ChangePasswordDto,
+  ChangePasswordResponseDto,
+} from './dto/change-password.dto';
+
+type AccessTokenPayload = { sub: string };
 
 @Controller('auth')
 export class AuthController {
@@ -88,5 +103,17 @@ export class AuthController {
     @Body() data: ResetPasswordDto,
   ): Promise<ResetPasswordResponseDto> {
     return this.authService.resetPassword(data);
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Post('change-password')
+  async changePassword(
+    @Req() req: Request & { user?: AccessTokenPayload },
+    @Body() data: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+    return this.authService.changePassword(req.user.sub, data);
   }
 }
