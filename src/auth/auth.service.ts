@@ -32,6 +32,10 @@ import {
   ResetPasswordDto,
   ResetPasswordResponseDto,
 } from './dto/reset-password.dto';
+import {
+  ChangePasswordDto,
+  ChangePasswordResponseDto,
+} from './dto/change-password.dto';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -715,6 +719,73 @@ export class AuthService {
 
     return {
       message: 'Password has been reset successfully',
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    const now = new Date();
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const validPassword = await bcrypt.compare(
+      dto.currentPassword,
+      user.password,
+    );
+
+    if (!validPassword) {
+      throw new ConflictException(
+        'New password must be different from current password',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          session: {
+            userId,
+            revokedAt: null,
+          },
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.session.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          password: hashedPassword,
+          passwordChangedAt: now,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+    });
+
+    return {
+      message: 'password changed successfully',
     };
   }
 
