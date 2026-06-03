@@ -22,6 +22,8 @@ import {
   ResendVerificationDto,
   ResendVerificationResponseDto,
 } from './dto/resend-verification.dto';
+import { LogoutDto, LogoutResponseDto } from './dto/logout.dto';
+import { LogoutAllDto } from './dto/logout-all.dto';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -482,6 +484,94 @@ export class AuthService {
       refreshToken: nextRefreshRaw,
       tokenType: 'Bearer',
       expiresIn: this.accessExpiresIn,
+    };
+  }
+
+  async logout(dto: LogoutDto): Promise<LogoutResponseDto> {
+    const now = new Date();
+    const tokenHash = this.hashToken(dto.refreshToken);
+
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: {
+        session: true,
+      },
+    });
+
+    if (!storedToken?.sessionId) {
+      return {
+        message: 'Logged out successfully',
+      };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          sessionId: storedToken.sessionId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.session.update({
+        where: { id: storedToken.sessionId },
+        data: {
+          revokedAt: now,
+        },
+      });
+    });
+
+    return {
+      message: 'Logged out successfully',
+    };
+  }
+
+  async logoutAll(dto: LogoutAllDto): Promise<LogoutResponseDto> {
+    const now = new Date();
+    const tokenHash = this.hashToken(dto.refreshToken);
+
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: {
+        session: true,
+      },
+    });
+
+    if (!storedToken?.session?.userId) {
+      return {
+        message: 'Logged out from all sessions successfully',
+      };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          session: {
+            userId: storedToken.session.userId,
+            revokedAt: null,
+          },
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.session.updateMany({
+        where: {
+          userId: storedToken.session.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+    });
+
+    return {
+      message: 'Logged out from all sessions successfully',
     };
   }
 

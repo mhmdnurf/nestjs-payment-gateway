@@ -12,6 +12,8 @@ import {
   ResendVerificationDto,
   ResendVerificationResponseDto,
 } from './dto/resend-verification.dto';
+import { LogoutDto, LogoutResponseDto } from './dto/logout.dto';
+import { LogoutAllDto, LogoutAllResponseDto } from './dto/logout-all.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -54,5 +56,15 @@ export class AuthController {
     @Body() data: RefreshTokenDto,
   ): Promise<RefreshTokenResponseDto> {
     return this.authService.refreshToken(data);
+  }
+
+  @Post('logout')
+  async logout(@Body() data: LogoutDto): Promise<LogoutResponseDto> {
+    return this.authService.logout(data);
+  }
+
+  @Post('logout-all')
+  async logoutAll(@Body() data: LogoutAllDto): Promise<LogoutAllResponseDto> {
+    return this.authService.logoutAll(data);
   }
 }
