@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
@@ -859,7 +860,7 @@ export class AuthService {
     });
 
     if (!session) {
-      throw new UnauthorizedException('Session not found');
+      throw new NotFoundException('Session not found');
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -884,7 +885,7 @@ export class AuthService {
     return {
       message:
         session.id === currentSessionId
-          ? 'Current session logged out successfulyy'
+          ? 'Current session logged out successfully'
           : 'Session revoked successfully',
     };
   }
