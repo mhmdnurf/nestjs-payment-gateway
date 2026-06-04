@@ -36,6 +36,8 @@ import {
   ChangePasswordDto,
   ChangePasswordResponseDto,
 } from './dto/change-password.dto';
+import { ListSessionsResponseDto } from './dto/session-item.dto';
+import { RevokeSessionResponseDto } from './dto/revoke-session.dto';
 
 type SessionMeta = {
   userAgent?: string | null;
@@ -448,6 +450,7 @@ export class AuthService {
         sub: user.id,
         username: user.username,
         role: user.role,
+        sessionId: activeToken.sessionId,
       },
       {
         secret: this.accessSecret,
@@ -745,7 +748,7 @@ export class AuthService {
     );
 
     if (!validPassword) {
-      throw new ConflictException('Current password is incorrect');
+      throw new UnauthorizedException('Current password is incorrect');
     }
 
     const samePassword = await bcrypt.compare(dto.newPassword, user.password);
@@ -764,9 +767,10 @@ export class AuthService {
           session: {
             userId,
             revokedAt: null,
-          },
-          id: {
-            not: currentSessionId,
+
+            id: {
+              not: currentSessionId,
+            },
           },
           revokedAt: null,
         },
@@ -779,7 +783,9 @@ export class AuthService {
         where: {
           userId,
           revokedAt: null,
-          id: { not: currentSessionId },
+          id: {
+            not: currentSessionId,
+          },
         },
         data: {
           revokedAt: now,
@@ -799,6 +805,87 @@ export class AuthService {
 
     return {
       message: 'password changed successfully',
+    };
+  }
+
+  async listSessions(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<ListSessionsResponseDto> {
+    const now = new Date();
+
+    const sessions = await this.prisma.session.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: {
+        lastSeenAt: 'desc',
+      },
+      select: {
+        id: true,
+        userAgent: true,
+        ipAddress: true,
+        lastSeenAt: true,
+        expiresAt: true,
+      },
+    });
+
+    return {
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        userAgent: session.userAgent,
+        ipAddress: session.ipAddress,
+        lastSeenAt: session.lastSeenAt.toISOString(),
+        expiresAt: session.expiresAt.toISOString(),
+        isCurrent: session.id === currentSessionId,
+      })),
+    };
+  }
+
+  async revokeSession(
+    userId: string,
+    currentSessionId: string,
+    targetSessionId: string,
+  ): Promise<RevokeSessionResponseDto> {
+    const now = new Date();
+
+    const session = await this.prisma.session.findFirst({
+      where: {
+        id: targetSessionId,
+        userId,
+      },
+    });
+
+    if (!session) {
+      throw new UnauthorizedException('Session not found');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          sessionId: session.id,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      await tx.session.update({
+        where: { id: session.id },
+        data: {
+          revokedAt: now,
+        },
+      });
+    });
+
+    return {
+      message:
+        session.id === currentSessionId
+          ? 'Current session logged out successfulyy'
+          : 'Session revoked successfully',
     };
   }
 

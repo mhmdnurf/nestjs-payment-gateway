@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
   Ip,
+  Param,
   Post,
   Req,
   UnauthorizedException,
@@ -35,6 +38,8 @@ import {
   ChangePasswordDto,
   ChangePasswordResponseDto,
 } from './dto/change-password.dto';
+import { ListSessionsResponseDto } from './dto/session-item.dto';
+import { RevokeSessionResponseDto } from './dto/revoke-session.dto';
 
 type AccessTokenPayload = { sub: string; sessionId: string };
 
@@ -118,6 +123,34 @@ export class AuthController {
       req.user.sub,
       req.user.sessionId,
       data,
+    );
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAccessGuard)
+  async listSessions(
+    @Req() req: Request & { user?: AccessTokenPayload },
+  ): Promise<ListSessionsResponseDto> {
+    if (!req.user?.sub || !req.user.sessionId) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+    return this.authService.listSessions(req.user.sub, req.user.sessionId);
+  }
+
+  @Delete('sessions/:sessionId')
+  @UseGuards(JwtAccessGuard)
+  async revokeSession(
+    @Req() req: Request & { user?: AccessTokenPayload },
+    @Param('sessionId') sessionId: string,
+  ): Promise<RevokeSessionResponseDto> {
+    if (!req.user?.sub || !req.user.sessionId) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.authService.revokeSession(
+      req.user.sub,
+      req.user.sessionId,
+      sessionId,
     );
   }
 }
