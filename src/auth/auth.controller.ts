@@ -40,6 +40,7 @@ import {
 } from './dto/change-password.dto';
 import { ListSessionsResponseDto } from './dto/session-item.dto';
 import { RevokeSessionResponseDto } from './dto/revoke-session.dto';
+import { Throttle } from '@nestjs/throttler';
 
 type AccessTokenPayload = { sub: string; sessionId: string };
 
@@ -48,6 +49,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async registerUser(@Body() data: RegisterDto): Promise<RegisterResponseDto> {
     return this.authService.register(data);
   }
@@ -60,6 +62,7 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async resendVerification(
     @Body() data: ResendVerificationDto,
   ): Promise<ResendVerificationResponseDto> {
@@ -67,6 +70,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(
     @Body() data: LoginDto,
     @Req() req: Request,
@@ -80,6 +84,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async refresh(
     @Body() data: RefreshTokenDto,
   ): Promise<RefreshTokenResponseDto> {
@@ -97,6 +102,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async forgotPassword(
     @Body() data: ForgotPasswordDto,
   ): Promise<ForgotPasswordResponseDto> {

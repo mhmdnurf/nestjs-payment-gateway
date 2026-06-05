@@ -6,9 +6,18 @@ import { PrismaModule } from './prisma.module';
 import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: 30,
+      },
+    ]),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -18,6 +27,6 @@ import { ConfigModule } from '@nestjs/config';
     MailModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
