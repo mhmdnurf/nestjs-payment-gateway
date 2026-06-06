@@ -9,9 +9,9 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { Request } from 'express';
-import { MeResponseDto } from 'src/auth/dto/me.dto';
+import { MeResponseDto } from 'src/users/dto/me.dto';
 import { JwtAccessGuard } from 'src/auth/guards/jwt-access.guard';
-import { UpdateMeDto } from 'src/auth/dto/update-me.dto';
+import { UpdateMeDto } from 'src/users/dto/update-me.dto';
 
 type AccessTokenPayload = { sub: string };
 

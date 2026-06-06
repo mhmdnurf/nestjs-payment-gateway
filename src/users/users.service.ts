@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MeResponseDto } from 'src/auth/dto/me.dto';
-import { UpdateMeDto } from 'src/auth/dto/update-me.dto';
+import { MeResponseDto } from 'src/users/dto/me.dto';
+import { UpdateMeDto } from 'src/users/dto/update-me.dto';
 import { PrismaService } from 'src/prisma.service';
 
 @Injectable()
