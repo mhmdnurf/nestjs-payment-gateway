@@ -1,4 +1,46 @@
-import { Controller } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import { WalletsService } from './wallets.service';
+import { JwtAccessGuard } from 'src/auth/guards/jwt-access.guard';
+import { Request } from 'express';
+import { MeWalletResponseDto } from './dto/me-wallet.dto';
+import { TopUpDto, TopUpResponseDto } from './dto/top-up.dto';
+
+type AccessTokenPayload = { sub: string };
 
 @Controller('wallets')
-export class WalletsController {}
+export class WalletsController {
+  constructor(private readonly walletsService: WalletsService) {}
+
+  @UseGuards(JwtAccessGuard)
+  @Get('me')
+  async me(
+    @Req() req: Request & { user?: AccessTokenPayload },
+  ): Promise<MeWalletResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.walletsService.me(req.user.sub);
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Post('top-up')
+  async topUp(
+    @Req() req: Request & { user?: AccessTokenPayload },
+    @Body() dto: TopUpDto,
+  ): Promise<TopUpResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.walletsService.topUp(req.user.sub, dto);
+  }
+}

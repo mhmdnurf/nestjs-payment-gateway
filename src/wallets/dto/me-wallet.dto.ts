@@ -3,4 +3,5 @@ export class MeWalletResponseDto {
   balance!: string;
   currency!: string;
   createdAt!: Date;
+  updatedAt!: Date;
 }

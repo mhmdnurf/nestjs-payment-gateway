@@ -8,8 +8,6 @@ import { MailModule } from './mail/mail.module';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { WalletsService } from './wallets/wallets.service';
-import { WalletsController } from './wallets/wallets.controller';
 import { WalletsModule } from './wallets/wallets.module';
 
 @Module({
@@ -30,7 +28,7 @@ import { WalletsModule } from './wallets/wallets.module';
     MailModule,
     WalletsModule,
   ],
-  controllers: [AppController, WalletsController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }, WalletsService],
+  controllers: [AppController],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

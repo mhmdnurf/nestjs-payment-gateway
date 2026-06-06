@@ -107,6 +107,14 @@ export class AuthService {
           },
         });
 
+        await tx.wallet.create({
+          data: {
+            userId: user.id,
+            balance: new Prisma.Decimal(0),
+            currency: 'IDR',
+          },
+        });
+
         const now = new Date();
 
         await tx.emailVerificationToken.updateMany({
