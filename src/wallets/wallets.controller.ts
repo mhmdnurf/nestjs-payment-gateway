@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -12,6 +13,10 @@ import { JwtAccessGuard } from 'src/auth/guards/jwt-access.guard';
 import { Request } from 'express';
 import { MeWalletResponseDto } from './dto/me-wallet.dto';
 import { TopUpDto, TopUpResponseDto } from './dto/top-up.dto';
+import {
+  ListWalletTransactionsDto,
+  ListWalletTransactionsResponseDto,
+} from './dto/list-wallet-transaction.dto';
 
 type AccessTokenPayload = { sub: string };
 
@@ -42,5 +47,18 @@ export class WalletsController {
     }
 
     return this.walletsService.topUp(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Get('me/transactions')
+  async meTransactions(
+    @Req() req: Request & { user?: AccessTokenPayload },
+    @Query() query: ListWalletTransactionsDto,
+  ): Promise<ListWalletTransactionsResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.walletsService.meTransactions(req.user.sub, query);
   }
 }

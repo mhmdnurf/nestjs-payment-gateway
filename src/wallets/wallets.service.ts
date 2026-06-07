@@ -3,6 +3,10 @@ import { PrismaService } from 'src/prisma.service';
 import { MeWalletResponseDto } from './dto/me-wallet.dto';
 import { TopUpDto, TopUpResponseDto } from './dto/top-up.dto';
 import { Prisma } from 'src/generated/prisma/browser';
+import {
+  ListWalletTransactionsDto,
+  ListWalletTransactionsResponseDto,
+} from './dto/list-wallet-transaction.dto';
 
 @Injectable()
 export class WalletsService {
@@ -102,6 +106,67 @@ export class WalletsService {
       description: result.transaction.description,
       reference: result.transaction.reference,
       createdAt: result.transaction.createdAt,
+    };
+  }
+
+  async meTransactions(
+    userId: string,
+    query: ListWalletTransactionsDto,
+  ): Promise<ListWalletTransactionsResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    const where = {
+      walletId: wallet.id,
+      ...(query.type ? { type: query.type } : {}),
+    };
+
+    const [transactions, totalItems] = await this.prisma.$transaction([
+      this.prisma.walletTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          reference: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.walletTransaction.count({ where }),
+    ]);
+
+    return {
+      items: transactions.map((item) => ({
+        id: item.id,
+        type: item.type,
+        amount: item.amount.toString(),
+        balanceAfter: item.balanceAfter.toString(),
+        description: item.description,
+        reference: item.reference,
+        createdAt: item.createdAt,
+      })),
+
+      meta: {
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+      },
     };
   }
 }
