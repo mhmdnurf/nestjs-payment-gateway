@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { MeWalletResponseDto } from './dto/me-wallet.dto';
 import { TopUpDto, TopUpResponseDto } from './dto/top-up.dto';
@@ -7,6 +11,7 @@ import {
   ListWalletTransactionsDto,
   ListWalletTransactionsResponseDto,
 } from './dto/list-wallet-transaction.dto';
+import { TransferDto, TransferResponseDto } from './dto/transfer.dto';
 
 @Injectable()
 export class WalletsService {
@@ -167,6 +172,146 @@ export class WalletsService {
         totalItems,
         totalPages: Math.ceil(totalItems / limit),
       },
+    };
+  }
+
+  async transfer(
+    senderUserId: string,
+    dto: TransferDto,
+  ): Promise<TransferResponseDto> {
+    const recipientUsername = dto.recipientUsername.trim().toLowerCase();
+    const amount = new Prisma.Decimal(dto.amount);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const senderWallet = await tx.wallet.findUnique({
+        where: {
+          userId: senderUserId,
+        },
+        select: {
+          id: true,
+          userId: true,
+          balance: true,
+          currency: true,
+        },
+      });
+
+      if (!senderWallet) {
+        throw new NotFoundException('Sender wallet not found');
+      }
+
+      const recipientUser = await tx.user.findUnique({
+        where: { username: recipientUsername },
+        select: {
+          id: true,
+          username: true,
+          wallet: {
+            select: {
+              id: true,
+              userId: true,
+              balance: true,
+              currency: true,
+            },
+          },
+        },
+      });
+
+      if (!recipientUser?.wallet) {
+        throw new NotFoundException('Recipient wallet not found');
+      }
+
+      if (recipientUser.id === senderUserId) {
+        throw new BadRequestException('Cannot transfer to your own wallet');
+      }
+
+      if (senderWallet.currency !== recipientUser.wallet.currency) {
+        throw new BadRequestException('Wallet currency mismatch');
+      }
+
+      if (senderWallet.balance.lessThan(amount)) {
+        throw new BadRequestException('Insufficient wallet balance');
+      }
+
+      const senderNewBalance = senderWallet.balance.sub(amount);
+      const recipientNewBalance = recipientUser.wallet.balance.add(amount);
+      const reference = `TRF-${Date.now()}-${senderWallet.id}`;
+
+      const updatedSenderWallet = await tx.wallet.update({
+        where: {
+          id: senderWallet.id,
+        },
+        data: {
+          balance: senderNewBalance,
+        },
+        select: {
+          id: true,
+          balance: true,
+        },
+      });
+
+      const updatedRecipientWallet = await tx.wallet.update({
+        where: {
+          id: recipientUser.wallet.id,
+        },
+        data: {
+          balance: recipientNewBalance,
+        },
+        select: {
+          id: true,
+          balance: true,
+        },
+      });
+
+      const transferOut = await tx.walletTransaction.create({
+        data: {
+          walletId: senderWallet.id,
+          type: 'TRANSFER_OUT',
+          amount,
+          balanceAfter: senderNewBalance,
+          description: dto.description?.trim() || null,
+          reference,
+        },
+        select: {
+          id: true,
+          createdAt: true,
+        },
+      });
+
+      const transferIn = await tx.walletTransaction.create({
+        data: {
+          walletId: recipientUser.wallet.id,
+          type: 'TRANSFER_IN',
+          amount,
+          balanceAfter: recipientNewBalance,
+          description: dto.description?.trim() || null,
+          reference,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      return {
+        reference,
+        senderWallet: updatedSenderWallet,
+        recipientWallet: updatedRecipientWallet,
+        recipientUsername: recipientUser.username,
+        transferOut,
+        transferIn,
+      };
+    });
+
+    return {
+      reference: result.reference,
+      senderWalletId: result.senderWallet.id,
+      senderBalance: result.senderWallet.balance.toString(),
+      recipientWalletId: result.recipientWallet.id,
+      recipientUsername: result.recipientUsername,
+      recipientBalance: result.recipientWallet.balance.toString(),
+      amount: amount.toString(),
+      description: dto.description?.trim() || null,
+      transferOutTransactionId: result.transferOut.id,
+      transferInTransactionId: result.transferIn.id,
+      createdAt: result.transferOut.createdAt,
     };
   }
 }

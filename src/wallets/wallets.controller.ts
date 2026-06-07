@@ -17,6 +17,7 @@ import {
   ListWalletTransactionsDto,
   ListWalletTransactionsResponseDto,
 } from './dto/list-wallet-transaction.dto';
+import { TransferDto, TransferResponseDto } from './dto/transfer.dto';
 
 type AccessTokenPayload = { sub: string };
 
@@ -60,5 +61,17 @@ export class WalletsController {
     }
 
     return this.walletsService.meTransactions(req.user.sub, query);
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Post('transfer')
+  async transfer(
+    @Req() req: Request & { user?: AccessTokenPayload },
+    @Body() dto: TransferDto,
+  ): Promise<TransferResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+    return this.walletsService.transfer(req.user.sub, dto);
   }
 }
