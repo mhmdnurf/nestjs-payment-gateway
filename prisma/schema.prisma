@@ -40,6 +40,7 @@ model User {
   updatedAt           DateTime             @updatedAt
   passwordResetTokens PasswordResetToken[]
   wallet              Wallet?
+  walletTopUps        WalletTopUp[]
 
   @@map("users")
 }
@@ -157,4 +158,30 @@ model WalletTransaction {
 
   @@index([walletId, createdAt])
   @@map("wallet_transactions")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+}
+
+model WalletTopUp {
+  id       String        @id @default(cuid())
+  userId   String
+  amount   Decimal       @db.Decimal(18, 2)
+  currency String        @default("IDR")
+  status   PaymentStatus @default(PENDING)
+
+  reference        String  @unique
+  xenditInvoiceId  String? @unique
+  xenditInvoiceUrl String?
+
+  paidAt    DateTime?
+  expiredAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
