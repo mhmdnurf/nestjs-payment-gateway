@@ -184,4 +184,7 @@ model WalletTopUp {
   updatedAt DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("wallet_top_ups")
 }
