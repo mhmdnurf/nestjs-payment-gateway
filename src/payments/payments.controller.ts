@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Headers,
   Post,
   Req,
   UnauthorizedException,
@@ -13,6 +14,10 @@ import {
   CreateWalletTopUpResponseDto,
 } from './dto/create-wallet-top-up.dto';
 import { PaymentsService } from './payments.service';
+import {
+  XenditInvoiceWebhookDto,
+  XenditWebhookResponseDto,
+} from './dto/xendit-invoice-webhook.dto';
 
 @Controller('payments')
 export class PaymentsController {
@@ -28,5 +33,13 @@ export class PaymentsController {
       throw new UnauthorizedException('Invalid access token payload');
     }
     return this.paymentsService.createWalletTopUp(req.user.sub, dto);
+  }
+
+  @Post('webhooks/xendit')
+  async handleXenditWebhook(
+    @Headers('x-callback-token') callbackToken: string | undefined,
+    @Body() dto: XenditInvoiceWebhookDto,
+  ): Promise<XenditWebhookResponseDto> {
+    return this.paymentsService.handleXenditInvoiceWebhook(callbackToken, dto);
   }
 }

@@ -9,6 +9,7 @@ describe('PaymentsController', () => {
 
   const paymentsService = {
     createWalletTopUp: jest.fn(),
+    handleXenditInvoiceWebhook: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -60,5 +61,33 @@ describe('PaymentsController', () => {
     ).rejects.toThrow(UnauthorizedException);
 
     expect(paymentsService.createWalletTopUp).not.toHaveBeenCalled();
+  });
+
+  it('forwards Xendit webhook token and payload to payments service', async () => {
+    const response = {
+      received: true,
+      credited: true,
+      status: 'PAID',
+    };
+
+    const payload = {
+      id: 'xendit-invoice-1',
+      external_id: 'WTU-20260611-ABC123',
+      status: 'PAID',
+      amount: 50000,
+    };
+
+    paymentsService.handleXenditInvoiceWebhook.mockResolvedValue(response);
+
+    const result = await controller.handleXenditWebhook(
+      'callback-token',
+      payload,
+    );
+
+    expect(paymentsService.handleXenditInvoiceWebhook).toHaveBeenCalledWith(
+      'callback-token',
+      payload,
+    );
+    expect(result).toBe(response);
   });
 });

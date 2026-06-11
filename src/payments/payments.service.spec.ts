@@ -8,6 +8,19 @@ import { Prisma } from 'src/generated/prisma/client';
 describe('PaymentsService', () => {
   let service: PaymentsService;
 
+  const tx = {
+    walletTopUp: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    wallet: {
+      update: jest.fn(),
+    },
+    walletTransaction: {
+      create: jest.fn(),
+    },
+  };
+
   const prisma = {
     user: {
       findUnique: jest.fn(),
@@ -15,15 +28,22 @@ describe('PaymentsService', () => {
     walletTopUp: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 
   const xenditService = {
     createInvoice: jest.fn(),
+    verifyCallbackToken: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    prisma.$transaction.mockImplementation(async (callback) => {
+      return callback(tx);
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -143,5 +163,134 @@ describe('PaymentsService', () => {
 
     expect(prisma.walletTopUp.create).not.toHaveBeenCalled();
     expect(xenditService.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('credits wallet once when Xendit paid webhook is received', async () => {
+    const paidAt = '2026-06-11T11:30:00.000Z';
+
+    tx.walletTopUp.findUnique.mockResolvedValue({
+      id: 'topup-1',
+      userId: 'user-1',
+      amount: new Prisma.Decimal(50000),
+      currency: 'IDR',
+      status: 'PENDING',
+      reference: 'WTU-20260611-ABC123',
+    });
+
+    tx.walletTopUp.updateMany.mockResolvedValue({ count: 1 });
+
+    tx.wallet.update.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(150000),
+    });
+
+    tx.walletTransaction.create.mockResolvedValue({
+      id: 'wallet-transaction-1',
+    });
+
+    const result = await service.handleXenditInvoiceWebhook('callback-token', {
+      id: 'xendit-invoice-1',
+      external_id: 'WTU-20260611-ABC123',
+      status: 'PAID',
+      amount: 50000,
+      paid_at: paidAt,
+    });
+
+    expect(xenditService.verifyCallbackToken).toHaveBeenCalledWith(
+      'callback-token',
+    );
+
+    expect(tx.walletTopUp.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'topup-1',
+        status: 'PENDING',
+      },
+      data: {
+        status: 'PAID',
+        xenditInvoiceId: 'xendit-invoice-1',
+        paidAt: new Date(paidAt),
+      },
+    });
+
+    expect(tx.wallet.update).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      data: {
+        balance: {
+          increment: new Prisma.Decimal(50000),
+        },
+      },
+      select: {
+        id: true,
+        balance: true,
+      },
+    });
+
+    expect(tx.walletTransaction.create).toHaveBeenCalledWith({
+      data: {
+        walletId: 'wallet-1',
+        type: 'TOP_UP',
+        amount: new Prisma.Decimal(50000),
+        balanceAfter: new Prisma.Decimal(150000),
+        description: 'Xendit wallet top-up WTU-20260611-ABC123',
+        reference: 'WTU-20260611-ABC123',
+      },
+    });
+
+    expect(result).toEqual({
+      received: true,
+      credited: true,
+      status: 'PAID',
+    });
+  });
+
+  it('does not credit wallet again for duplicate paid webhook', async () => {
+    tx.walletTopUp.findUnique.mockResolvedValue({
+      id: 'topup-1',
+      userId: 'user-1',
+      amount: new Prisma.Decimal(50000),
+      currency: 'IDR',
+      status: 'PAID',
+      reference: 'WTU-20260611-ABC123',
+    });
+
+    const result = await service.handleXenditInvoiceWebhook('callback-token', {
+      id: 'xendit-invoice-1',
+      external_id: 'WTU-20260611-ABC123',
+      status: 'PAID',
+      amount: 50000,
+    });
+
+    expect(tx.walletTopUp.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.update).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+
+    expect(result).toEqual({
+      received: true,
+      credited: false,
+      status: 'PAID',
+    });
+  });
+
+  it('marks pending wallet top-up as expired', async () => {
+    const result = await service.handleXenditInvoiceWebhook('callback-token', {
+      id: 'xendit-invoice-1',
+      external_id: 'WTU-20260611-ABC123',
+      status: 'EXPIRED',
+      amount: 50000,
+    });
+
+    expect(prisma.walletTopUp.updateMany).toHaveBeenCalledWith({
+      where: {
+        reference: 'WTU-20260611-ABC123',
+        status: 'PENDING',
+      },
+      data: { status: 'EXPIRED' },
+    });
+
+    expect(result).toEqual({
+      received: true,
+      credited: false,
+      status: 'EXPIRED',
+    });
   });
 });

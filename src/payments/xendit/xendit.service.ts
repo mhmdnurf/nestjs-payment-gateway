@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   CreateXenditInvoiceInput,
   CreateXenditInvoiceResult,
@@ -58,6 +62,18 @@ export class XenditService {
       currency: data.currency,
       expiryDate: data.expiry_date,
     };
+  }
+
+  verifyCallbackToken(callbackToken: string | undefined): void {
+    const expectedToken = process.env.XENDIT_WEBHOOK_TOKEN;
+
+    if (!expectedToken) {
+      throw new InternalServerErrorException('XENDIT_WEBHOOK_TOKEN is not set');
+    }
+
+    if (!callbackToken || callbackToken !== expectedToken) {
+      throw new UnauthorizedException('Invalid Xendit callback token');
+    }
   }
 
   private createAuthorizationHeader(): string {
