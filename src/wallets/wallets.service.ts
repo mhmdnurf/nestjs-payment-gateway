@@ -12,7 +12,7 @@ import {
 } from './dto/list-wallet-transaction.dto';
 import { TransferDto, TransferResponseDto } from './dto/transfer.dto';
 import { Prisma } from 'src/generated/prisma/client';
-import { randomBytes } from 'crypto';
+import { generateReference } from 'src/common/utils/reference.util';
 
 const MAX_RETRIES = 3;
 
@@ -122,7 +122,7 @@ export class WalletsService {
       }
 
       const amount = new Prisma.Decimal(dto.amount);
-      const reference = this.generateReference('TOPUP');
+      const reference = generateReference('TOPUP');
 
       const updatedWallet = await tx.wallet.update({
         where: { id: wallet.id },
@@ -243,7 +243,7 @@ export class WalletsService {
         throw new BadRequestException('Insufficient wallet balance');
       }
 
-      const reference = this.generateReference('TRF');
+      const reference = generateReference('TRF');
 
       const updatedSenderWallet = await tx.wallet.findUniqueOrThrow({
         where: { id: senderWallet.id },
@@ -345,11 +345,5 @@ export class WalletsService {
       }
     }
     throw new Error('Transaction retry loop exhausted');
-  }
-
-  private generateReference(prefix: string): string {
-    const random = randomBytes(8).toString('hex').toUpperCase();
-
-    return `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${random}`;
   }
 }

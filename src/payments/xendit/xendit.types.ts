@@ -23,7 +23,7 @@ export type XenditInvoiceResponse = {
   external_id: string;
   status: string;
   invoice_url: string;
-  amoount: number;
+  amount: number;
   currency: string;
   expiry_date?: string;
 };

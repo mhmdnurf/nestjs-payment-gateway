@@ -54,7 +54,7 @@ export class XenditService {
       externalId: data.external_id,
       status: data.status,
       invoiceUrl: data.invoice_url,
-      amount: data.amoount,
+      amount: data.amount,
       currency: data.currency,
       expiryDate: data.expiry_date,
     };
