@@ -1,8 +1,11 @@
 import {
   Body,
   Controller,
+  Get,
   Headers,
+  Param,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -18,6 +21,11 @@ import {
   XenditInvoiceWebhookDto,
   XenditWebhookResponseDto,
 } from './dto/xendit-invoice-webhook.dto';
+import {
+  ListWalletTopUpsDto,
+  ListWalletTopUpsResponseDto,
+} from './dto/list-wallet-top-ups.dto';
+import { WalletTopUpItemDto } from './dto/wallet-top-up-item.dto';
 
 @Controller('payments')
 export class PaymentsController {
@@ -41,5 +49,31 @@ export class PaymentsController {
     @Body() dto: XenditInvoiceWebhookDto,
   ): Promise<XenditWebhookResponseDto> {
     return this.paymentsService.handleXenditInvoiceWebhook(callbackToken, dto);
+  }
+
+  @Get('wallet-top-ups')
+  @UseGuards(JwtAccessGuard)
+  async listWalletTopUps(
+    @Req() req: Request & { user?: { sub: string } },
+    @Query() query: ListWalletTopUpsDto,
+  ): Promise<ListWalletTopUpsResponseDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.paymentsService.listWalletTopUps(req.user.sub, query);
+  }
+
+  @Get('wallet-top-ups/:id')
+  @UseGuards(JwtAccessGuard)
+  async getWalletTopUp(
+    @Req() req: Request & { user?: { sub: string } },
+    @Param('id') id: string,
+  ): Promise<WalletTopUpItemDto> {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException('Invalid access token payload');
+    }
+
+    return this.paymentsService.getWalletTopUp(req.user.sub, id);
   }
 }

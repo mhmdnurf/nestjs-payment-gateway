@@ -15,6 +15,11 @@ import {
   XenditInvoiceWebhookDto,
   XenditWebhookResponseDto,
 } from './dto/xendit-invoice-webhook.dto';
+import { WalletTopUpItemDto } from './dto/wallet-top-up-item.dto';
+import {
+  ListWalletTopUpsDto,
+  ListWalletTopUpsResponseDto,
+} from './dto/list-wallet-top-ups.dto';
 
 @Injectable()
 export class PaymentsService {
@@ -219,5 +224,107 @@ export class PaymentsService {
       },
       data: { status },
     });
+  }
+
+  private mapWalletTopUp(item: {
+    id: string;
+    reference: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    status: string;
+    xenditInvoiceUrl: string | null;
+    paidAt: Date | null;
+    expiredAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): WalletTopUpItemDto {
+    return {
+      id: item.id,
+      reference: item.reference,
+      amount: item.amount.toString(),
+      currency: item.currency,
+      status: item.status,
+      invoiceUrl: item.xenditInvoiceUrl ?? '',
+      paidAt: item.paidAt,
+      expiredAt: item.expiredAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    };
+  }
+
+  async listWalletTopUps(
+    userId: string,
+    query: ListWalletTopUpsDto,
+  ): Promise<ListWalletTopUpsResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      userId,
+      ...(query.status ? { status: query.status } : {}),
+    };
+
+    const [items, totalItems] = await this.prisma.$transaction([
+      this.prisma.walletTopUp.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          reference: true,
+          amount: true,
+          currency: true,
+          status: true,
+          xenditInvoiceUrl: true,
+          paidAt: true,
+          expiredAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.walletTopUp.count({ where }),
+    ]);
+
+    return {
+      items: items.map((item) => this.mapWalletTopUp(item)),
+      meta: {
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+      },
+    };
+  }
+
+  async getWalletTopUp(
+    userId: string,
+    id: string,
+  ): Promise<WalletTopUpItemDto> {
+    const topUp = await this.prisma.walletTopUp.findFirst({
+      where: {
+        id,
+        userId,
+      },
+      select: {
+        id: true,
+        reference: true,
+        amount: true,
+        currency: true,
+        status: true,
+        xenditInvoiceUrl: true,
+        paidAt: true,
+        expiredAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!topUp) {
+      throw new NotFoundException('Wallet top-up not found');
+    }
+
+    return this.mapWalletTopUp(topUp);
   }
 }
