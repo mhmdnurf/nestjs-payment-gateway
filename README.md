@@ -512,49 +512,6 @@ Successful response:
 
 ---
 
-### Top up wallet
-
-`POST /api/v1/wallets/top-up` — **requires JWT**
-
-Headers:
-
-```
-Authorization: Bearer <accessToken>
-```
-
-Request body:
-
-```json
-{
-  "amount": 50000,
-  "description": "Initial top-up"
-}
-```
-
-Validation rules:
-
-- `amount`: minimum `0.01`.
-- `description`: optional, max 255 characters.
-
-Successful response:
-
-```json
-{
-  "walletId": "cuid",
-  "balance": "60000.00",
-  "currency": "IDR",
-  "transactionId": "cuid",
-  "transactionType": "TOP_UP",
-  "amount": "50000.00",
-  "balanceAfter": "60000.00",
-  "description": "Initial top-up",
-  "reference": "TOP_UP-1748649600000-<walletId>",
-  "createdAt": "2026-05-31T00:00:00.000Z"
-}
-```
-
----
-
 ### Transfer
 
 `POST /api/v1/wallets/transfer` — **requires JWT**
@@ -586,13 +543,14 @@ Behavior:
 - Cannot transfer to your own wallet.
 - Sender and recipient wallets must share the same `currency`.
 - Returns `400 Bad Request` if sender has insufficient balance.
+- Uses guarded balance debit and serializable transaction retry for write conflicts.
 - Both `TRANSFER_OUT` (sender) and `TRANSFER_IN` (recipient) transactions are recorded with the same `reference`.
 
 Successful response:
 
 ```json
 {
-  "reference": "TRF-1748649600000-<senderWalletId>",
+  "reference": "TRF-20260611-A3F91C0D7B24E801",
   "senderWalletId": "cuid",
   "senderBalance": "40000.00",
   "recipientWalletId": "cuid",
@@ -638,8 +596,8 @@ Successful response:
       "type": "TOP_UP",
       "amount": "50000.00",
       "balanceAfter": "60000.00",
-      "description": "Initial top-up",
-      "reference": "TOP_UP-1748649600000-<walletId>",
+      "description": "Xendit wallet top-up WTU-20260611-21D2901A94816C7A",
+      "reference": "WTU-20260611-21D2901A94816C7A",
       "createdAt": "2026-05-31T00:00:00.000Z"
     }
   ],
@@ -654,12 +612,116 @@ Successful response:
 
 ---
 
+## Payments module
+
+User wallet top-ups are created through the payments flow. Direct user wallet crediting is not exposed as a public wallet endpoint.
+
+### Create wallet top-up invoice
+
+`POST /api/v1/payments/wallet-top-ups` — **requires JWT**
+
+Headers:
+
+```
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "amount": 10000
+}
+```
+
+Validation rules:
+
+- `amount`: minimum `1000`, max 2 decimal places.
+
+Behavior:
+
+- Creates a local `WalletTopUp` record with `PENDING` status.
+- Creates a Xendit invoice using the local top-up `reference` as Xendit `external_id`.
+- Stores the Xendit invoice ID, invoice URL, and expiry time.
+- Does not credit the wallet immediately. Wallet credit happens only after a paid Xendit webhook.
+
+Successful response:
+
+```json
+{
+  "id": "cuid",
+  "reference": "WTU-20260611-21D2901A94816C7A",
+  "status": "PENDING",
+  "amount": "10000",
+  "currency": "IDR",
+  "invoiceUrl": "https://checkout-staging.xendit.co/web/6a2ae1bf91a293a99d849ccb"
+}
+```
+
+---
+
+### Xendit invoice webhook
+
+`POST /api/v1/payments/webhooks/xendit`
+
+Headers:
+
+```
+Content-Type: application/json
+x-callback-token: <XENDIT_WEBHOOK_TOKEN>
+```
+
+Example paid webhook body:
+
+```json
+{
+  "id": "6a2ae1bf91a293a99d849ccb",
+  "external_id": "WTU-20260611-21D2901A94816C7A",
+  "status": "PAID",
+  "amount": 10000,
+  "paid_at": "2026-06-11T16:30:00.000Z"
+}
+```
+
+Behavior:
+
+- Verifies `x-callback-token` against `XENDIT_WEBHOOK_TOKEN`.
+- Looks up `WalletTopUp` by `external_id`.
+- `PAID` or `SETTLED`: marks top-up as `PAID`, credits the wallet once, and creates a `TOP_UP` wallet transaction.
+- Duplicate paid webhooks are accepted but do not credit the wallet again.
+- `EXPIRED` and `FAILED`: update pending top-up status without changing wallet balance.
+
+Successful response:
+
+```json
+{
+  "received": true,
+  "credited": true,
+  "status": "PAID"
+}
+```
+
+Duplicate paid webhook response:
+
+```json
+{
+  "received": true,
+  "credited": false,
+  "status": "PAID"
+}
+```
+
+---
+
 ## Auth environment variables
 
 ### Required
 
 - `DATABASE_URL`
 - `JWT_ACCESS_SECRET`
+- `XENDIT_SECRET_KEY`
+- `XENDIT_WEBHOOK_TOKEN`
 
 ### Optional
 
