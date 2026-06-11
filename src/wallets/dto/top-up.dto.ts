@@ -9,7 +9,7 @@ import {
 
 export class TopUpDto {
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   amount!: number;
 

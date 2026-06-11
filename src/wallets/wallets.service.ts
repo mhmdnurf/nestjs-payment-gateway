@@ -6,12 +6,15 @@ import {
 import { PrismaService } from 'src/prisma.service';
 import { MeWalletResponseDto } from './dto/me-wallet.dto';
 import { TopUpDto, TopUpResponseDto } from './dto/top-up.dto';
-import { Prisma } from 'src/generated/prisma/browser';
 import {
   ListWalletTransactionsDto,
   ListWalletTransactionsResponseDto,
 } from './dto/list-wallet-transaction.dto';
 import { TransferDto, TransferResponseDto } from './dto/transfer.dto';
+import { Prisma } from 'src/generated/prisma/client';
+import { randomBytes } from 'crypto';
+
+const MAX_RETRIES = 3;
 
 @Injectable()
 export class WalletsService {
@@ -39,78 +42,6 @@ export class WalletsService {
       currency: wallet.currency,
       createdAt: wallet.createdAt,
       updatedAt: wallet.updatedAt,
-    };
-  }
-
-  async topUp(userId: string, dto: TopUpDto): Promise<TopUpResponseDto> {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({
-        where: { userId },
-        select: {
-          id: true,
-          balance: true,
-          currency: true,
-        },
-      });
-
-      if (!wallet) {
-        throw new NotFoundException('Wallet not found');
-      }
-
-      const amount = new Prisma.Decimal(dto.amount);
-      const newBalance = wallet.balance.add(amount);
-      const reference = `TOP_UP-${Date.now()}-${wallet.id}`;
-
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: {
-          balance: newBalance,
-        },
-        select: {
-          id: true,
-          balance: true,
-          currency: true,
-        },
-      });
-
-      const transaction = await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: 'TOP_UP',
-          amount,
-          balanceAfter: newBalance,
-          description: dto.description?.trim() || null,
-          reference,
-        },
-        select: {
-          id: true,
-          walletId: true,
-          type: true,
-          amount: true,
-          balanceAfter: true,
-          description: true,
-          reference: true,
-          createdAt: true,
-        },
-      });
-
-      return {
-        wallet: updatedWallet,
-        transaction,
-      };
-    });
-
-    return {
-      walletId: result.wallet.id,
-      balance: result.wallet.balance.toString(),
-      currency: result.wallet.currency,
-      transactionId: result.transaction.id,
-      transactionType: result.transaction.type,
-      amount: result.transaction.amount.toString(),
-      balanceAfter: result.transaction.balanceAfter.toString(),
-      description: result.transaction.description,
-      reference: result.transaction.reference,
-      createdAt: result.transaction.createdAt,
     };
   }
 
@@ -175,6 +106,77 @@ export class WalletsService {
     };
   }
 
+  async topUp(userId: string, dto: TopUpDto): Promise<TopUpResponseDto> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          balance: true,
+          currency: true,
+        },
+      });
+
+      if (!wallet) {
+        throw new NotFoundException('Wallet not found');
+      }
+
+      const amount = new Prisma.Decimal(dto.amount);
+      const reference = this.generateReference('TOPUP');
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: { increment: amount },
+        },
+        select: {
+          id: true,
+          balance: true,
+          currency: true,
+        },
+      });
+
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: 'TOP_UP',
+          amount,
+          balanceAfter: updatedWallet.balance,
+          description: dto.description?.trim() || null,
+          reference,
+        },
+        select: {
+          id: true,
+          walletId: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          reference: true,
+          createdAt: true,
+        },
+      });
+
+      return {
+        wallet: updatedWallet,
+        transaction,
+      };
+    });
+
+    return {
+      walletId: result.wallet.id,
+      balance: result.wallet.balance.toString(),
+      currency: result.wallet.currency,
+      transactionId: result.transaction.id,
+      transactionType: result.transaction.type,
+      amount: result.transaction.amount.toString(),
+      balanceAfter: result.transaction.balanceAfter.toString(),
+      description: result.transaction.description,
+      reference: result.transaction.reference,
+      createdAt: result.transaction.createdAt,
+    };
+  }
+
   async transfer(
     senderUserId: string,
     dto: TransferDto,
@@ -182,7 +184,7 @@ export class WalletsService {
     const recipientUsername = dto.recipientUsername.trim().toLowerCase();
     const amount = new Prisma.Decimal(dto.amount);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.runSerializableTransaction(async (tx) => {
       const senderWallet = await tx.wallet.findUnique({
         where: {
           userId: senderUserId,
@@ -227,21 +229,24 @@ export class WalletsService {
         throw new BadRequestException('Wallet currency mismatch');
       }
 
-      if (senderWallet.balance.lessThan(amount)) {
+      const senderDebit = await tx.wallet.updateMany({
+        where: {
+          id: senderWallet.id,
+          balance: { gte: amount },
+        },
+        data: {
+          balance: { decrement: amount },
+        },
+      });
+
+      if (senderDebit.count === 0) {
         throw new BadRequestException('Insufficient wallet balance');
       }
 
-      const senderNewBalance = senderWallet.balance.sub(amount);
-      const recipientNewBalance = recipientUser.wallet.balance.add(amount);
-      const reference = `TRF-${Date.now()}-${senderWallet.id}`;
+      const reference = this.generateReference('TRF');
 
-      const updatedSenderWallet = await tx.wallet.update({
-        where: {
-          id: senderWallet.id,
-        },
-        data: {
-          balance: senderNewBalance,
-        },
+      const updatedSenderWallet = await tx.wallet.findUniqueOrThrow({
+        where: { id: senderWallet.id },
         select: {
           id: true,
           balance: true,
@@ -253,7 +258,7 @@ export class WalletsService {
           id: recipientUser.wallet.id,
         },
         data: {
-          balance: recipientNewBalance,
+          balance: { increment: amount },
         },
         select: {
           id: true,
@@ -266,7 +271,7 @@ export class WalletsService {
           walletId: senderWallet.id,
           type: 'TRANSFER_OUT',
           amount,
-          balanceAfter: senderNewBalance,
+          balanceAfter: updatedSenderWallet.balance,
           description: dto.description?.trim() || null,
           reference,
         },
@@ -281,7 +286,7 @@ export class WalletsService {
           walletId: recipientUser.wallet.id,
           type: 'TRANSFER_IN',
           amount,
-          balanceAfter: recipientNewBalance,
+          balanceAfter: updatedRecipientWallet.balance,
           description: dto.description?.trim() || null,
           reference,
         },
@@ -313,5 +318,38 @@ export class WalletsService {
       transferInTransactionId: result.transferIn.id,
       createdAt: result.transferOut.createdAt,
     };
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async runSerializableTransaction<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        const isRetryable =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034';
+
+        if (isRetryable && attempt < MAX_RETRIES) {
+          await this.sleep(25 * attempt);
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error('Transaction retry loop exhausted');
+  }
+
+  private generateReference(prefix: string): string {
+    const random = randomBytes(8).toString('hex').toUpperCase();
+
+    return `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${random}`;
   }
 }

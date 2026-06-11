@@ -12,7 +12,7 @@ export class TransferDto {
   @IsString()
   @Matches(/^[a-z0-9_]+$/, {
     message:
-      'recepientUsername can only contain lowercase letters, numbers, and underscores',
+      'recipientUsername can only contain lowercase letters, numbers, and underscores',
   })
   recipientUsername!: string;
 
