@@ -35,12 +35,17 @@ export class PaymentsController {
   @UseGuards(JwtAccessGuard)
   async createWalletTopUp(
     @Req() req: Request & { user?: { sub: string } },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CreateWalletTopUpDto,
   ): Promise<CreateWalletTopUpResponseDto> {
     if (!req.user?.sub) {
       throw new UnauthorizedException('Invalid access token payload');
     }
-    return this.paymentsService.createWalletTopUp(req.user.sub, dto);
+    return this.paymentsService.createWalletTopUp(
+      req.user.sub,
+      dto,
+      idempotencyKey,
+    );
   }
 
   @Post('webhooks/xendit')

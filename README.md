@@ -625,7 +625,10 @@ Headers:
 ```
 Authorization: Bearer <accessToken>
 Content-Type: application/json
+Idempotency-Key: <unique-client-generated-key>
 ```
+
+`Idempotency-Key` is optional but recommended. Send the same key when retrying the same top-up request after a timeout or network error.
 
 Request body:
 
@@ -645,6 +648,8 @@ Behavior:
 - Creates a Xendit invoice using the local top-up `reference` as Xendit `external_id`.
 - Stores the Xendit invoice ID, invoice URL, and expiry time.
 - Does not credit the wallet immediately. Wallet credit happens only after a paid Xendit webhook.
+- If the same authenticated user sends the same `Idempotency-Key` again, the API returns the existing top-up instead of creating a duplicate invoice.
+- Concurrent duplicate requests with the same `Idempotency-Key` are handled using the database unique constraint on `(userId, idempotencyKey)`.
 
 Successful response:
 

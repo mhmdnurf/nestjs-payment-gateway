@@ -26,6 +26,7 @@ describe('PaymentsService', () => {
       findUnique: jest.fn(),
     },
     walletTopUp: {
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -387,5 +388,52 @@ describe('PaymentsService', () => {
 
     expect(tx.wallet.update).toHaveBeenCalled();
     expect(tx.walletTransaction.create).toHaveBeenCalled();
+  });
+
+  it('returns existing wallet top-up for the same idempotency key', async () => {
+    prisma.walletTopUp.findUnique.mockResolvedValue({
+      id: 'topup-1',
+      reference: 'WTU-20260611-ABC123',
+      amount: new Prisma.Decimal(50000),
+      currency: 'IDR',
+      status: 'PENDING',
+      xenditInvoiceUrl: 'https://checkout.xendit.co/invoice-1',
+    });
+
+    const result = await service.createWalletTopUp(
+      'user-1',
+      { amount: 50000 },
+      'idem-key-1',
+    );
+
+    expect(prisma.walletTopUp.findUnique).toHaveBeenCalledWith({
+      where: {
+        userId_idempotencyKey: {
+          userId: 'user-1',
+          idempotencyKey: 'idem-key-1',
+        },
+      },
+      select: {
+        id: true,
+        reference: true,
+        amount: true,
+        currency: true,
+        status: true,
+        xenditInvoiceUrl: true,
+      },
+    });
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.walletTopUp.create).not.toHaveBeenCalled();
+    expect(xenditService.createInvoice).not.toHaveBeenCalled();
+
+    expect(result).toEqual({
+      id: 'topup-1',
+      reference: 'WTU-20260611-ABC123',
+      status: 'PENDING',
+      amount: '50000',
+      currency: 'IDR',
+      invoiceUrl: 'https://checkout.xendit.co/invoice-1',
+    });
   });
 });

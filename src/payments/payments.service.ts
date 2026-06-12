@@ -31,9 +31,21 @@ export class PaymentsService {
   async createWalletTopUp(
     userId: string,
     dto: CreateWalletTopUpDto,
+    idempotencyKey?: string,
   ): Promise<CreateWalletTopUpResponseDto> {
+    const normalizedIdempotencyKey = idempotencyKey?.trim() || null;
     const amount = new Prisma.Decimal(dto.amount);
-    const reference = generateReference('WTU');
+
+    if (normalizedIdempotencyKey) {
+      const existingTopUp = await this.findWalletTopUpByIdempotencyKey(
+        userId,
+        normalizedIdempotencyKey,
+      );
+
+      if (existingTopUp) {
+        return this.mapCreateWalletTopUpResponse(existingTopUp);
+      }
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -44,22 +56,55 @@ export class PaymentsService {
       throw new NotFoundException('User not found');
     }
 
-    const topUp = await this.prisma.walletTopUp.create({
-      data: {
+    const reference = generateReference('WTU');
+
+    let topUp: {
+      id: string;
+      reference: string;
+      amount: Prisma.Decimal;
+      currency: string;
+      status: string;
+    };
+
+    try {
+      topUp = await this.prisma.walletTopUp.create({
+        data: {
+          userId,
+          amount,
+          currency: 'IDR',
+          reference,
+          status: 'PENDING',
+          idempotencyKey: normalizedIdempotencyKey,
+        },
+        select: {
+          id: true,
+          reference: true,
+          amount: true,
+          currency: true,
+          status: true,
+        },
+      });
+    } catch (error) {
+      const isIdempotencyConflict =
+        normalizedIdempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002';
+
+      if (!isIdempotencyConflict) {
+        throw error;
+      }
+
+      const existingTopUp = await this.findWalletTopUpByIdempotencyKey(
         userId,
-        amount,
-        currency: 'IDR',
-        reference,
-        status: 'PENDING',
-      },
-      select: {
-        id: true,
-        reference: true,
-        amount: true,
-        currency: true,
-        status: true,
-      },
-    });
+        normalizedIdempotencyKey,
+      );
+
+      if (!existingTopUp) {
+        throw error;
+      }
+
+      return this.mapCreateWalletTopUpResponse(existingTopUp);
+    }
 
     try {
       const invoice = await this.xenditService.createInvoice({
@@ -87,14 +132,7 @@ export class PaymentsService {
         },
       });
 
-      return {
-        id: updatedTopUp.id,
-        reference: updatedTopUp.reference,
-        status: updatedTopUp.status,
-        amount: updatedTopUp.amount.toString(),
-        currency: updatedTopUp.currency,
-        invoiceUrl: updatedTopUp.xenditInvoiceUrl!,
-      };
+      return this.mapCreateWalletTopUpResponse(updatedTopUp);
     } catch (error) {
       await this.prisma.walletTopUp.update({
         where: { id: topUp.id },
@@ -392,5 +430,45 @@ export class PaymentsService {
       currency: typeof body.currency === 'string' ? body.currency : undefined,
       paid_at: typeof body.paid_at === 'string' ? body.paid_at : undefined,
     };
+  }
+
+  private mapCreateWalletTopUpResponse(topUp: {
+    id: string;
+    reference: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    status: string;
+    xenditInvoiceUrl: string | null;
+  }): CreateWalletTopUpResponseDto {
+    return {
+      id: topUp.id,
+      reference: topUp.reference,
+      status: topUp.status,
+      amount: topUp.amount.toString(),
+      currency: topUp.currency,
+      invoiceUrl: topUp.xenditInvoiceUrl,
+    };
+  }
+
+  private async findWalletTopUpByIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+  ) {
+    return this.prisma.walletTopUp.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId,
+          idempotencyKey,
+        },
+      },
+      select: {
+        id: true,
+        reference: true,
+        amount: true,
+        currency: true,
+        status: true,
+        xenditInvoiceUrl: true,
+      },
+    });
   }
 }

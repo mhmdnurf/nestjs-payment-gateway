@@ -46,18 +46,25 @@ describe('PaymentsController', () => {
 
     const result = await controller.createWalletTopUp(
       { user: { sub: 'user-1' } } as any,
+      'idem-key-1',
       { amount: 50000 },
     );
 
-    expect(paymentsService.createWalletTopUp).toHaveBeenCalledWith('user-1', {
-      amount: 50000,
-    });
+    expect(paymentsService.createWalletTopUp).toHaveBeenCalledWith(
+      'user-1',
+      {
+        amount: 50000,
+      },
+      'idem-key-1',
+    );
     expect(result).toBe(response);
   });
 
   it('throws UnauthorizedException when access token payload has no sub', async () => {
     await expect(
-      controller.createWalletTopUp({ user: {} } as any, { amount: 50000 }),
+      controller.createWalletTopUp({ user: {} } as any, 'idem-key-1', {
+        amount: 50000,
+      }),
     ).rejects.toThrow(UnauthorizedException);
 
     expect(paymentsService.createWalletTopUp).not.toHaveBeenCalled();

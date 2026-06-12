@@ -14,5 +14,5 @@ export class CreateWalletTopUpResponseDto {
   status!: string;
   amount!: string;
   currency!: string;
-  invoiceUrl!: string;
+  invoiceUrl!: string | null;
 }

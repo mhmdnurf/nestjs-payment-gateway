@@ -175,6 +175,7 @@ model WalletTopUp {
   status   PaymentStatus @default(PENDING)
 
   reference        String  @unique
+  idempotencyKey   String?
   xenditInvoiceId  String? @unique
   xenditInvoiceUrl String?
 
@@ -185,6 +186,7 @@ model WalletTopUp {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, status])
   @@map("wallet_top_ups")
 }
