@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Logger,
   Param,
   Post,
   Query,
@@ -17,10 +18,7 @@ import {
   CreateWalletTopUpResponseDto,
 } from './dto/create-wallet-top-up.dto';
 import { PaymentsService } from './payments.service';
-import {
-  XenditInvoiceWebhookDto,
-  XenditWebhookResponseDto,
-} from './dto/xendit-invoice-webhook.dto';
+import { XenditWebhookResponseDto } from './dto/xendit-invoice-webhook.dto';
 import {
   ListWalletTopUpsDto,
   ListWalletTopUpsResponseDto,
@@ -29,6 +27,8 @@ import { WalletTopUpItemDto } from './dto/wallet-top-up-item.dto';
 
 @Controller('payments')
 export class PaymentsController {
+  private readonly logger = new Logger(PaymentsController.name);
+
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('wallet-top-ups')
@@ -46,9 +46,29 @@ export class PaymentsController {
   @Post('webhooks/xendit')
   async handleXenditWebhook(
     @Headers('x-callback-token') callbackToken: string | undefined,
-    @Body() dto: XenditInvoiceWebhookDto,
+    @Body() body: Record<string, unknown>,
   ): Promise<XenditWebhookResponseDto> {
-    return this.paymentsService.handleXenditInvoiceWebhook(callbackToken, dto);
+    try {
+      const result = await this.paymentsService.handleXenditInvoiceWebhook(
+        callbackToken,
+        body,
+      );
+
+      this.logger.log(
+        `Xendit webhook processed: external_id=${String(body.external_id)}, status=${String(body.status)}, credited=${String(result.credited)}`,
+      );
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+
+      this.logger.error(
+        `Xendit webhook failed: external_id=${String(body.external_id)}, status=${String(body.status)}, message=${message}`,
+        stack,
+      );
+      throw error;
+    }
   }
 
   @Get('wallet-top-ups')

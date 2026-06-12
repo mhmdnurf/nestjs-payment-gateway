@@ -688,9 +688,12 @@ Behavior:
 
 - Verifies `x-callback-token` against `XENDIT_WEBHOOK_TOKEN`.
 - Looks up `WalletTopUp` by `external_id`.
+- Ignores extra Xendit fields that are not needed by the wallet-crediting flow.
+- Validates the money-critical fields used by the service: `id`, `external_id`, `status`, `amount` or `paid_amount`, and `currency`.
 - `PAID` or `SETTLED`: marks top-up as `PAID`, credits the wallet once, and creates a `TOP_UP` wallet transaction.
 - Duplicate paid webhooks are accepted but do not credit the wallet again.
 - `EXPIRED` and `FAILED`: update pending top-up status without changing wallet balance.
+- Webhook success/failure is logged by `PaymentsController`.
 
 Successful response:
 
@@ -711,6 +714,139 @@ Duplicate paid webhook response:
   "status": "PAID"
 }
 ```
+
+---
+
+### List wallet top-ups
+
+`GET /api/v1/payments/wallet-top-ups` — **requires JWT**
+
+Headers:
+
+```
+Authorization: Bearer <accessToken>
+```
+
+Query parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | integer ≥ 1 | `1` | Page number |
+| `limit` | integer 1–100 | `10` | Items per page |
+| `status` | enum | — | Filter by status: `PENDING`, `PAID`, `EXPIRED`, `FAILED` |
+
+Example: `GET /api/v1/payments/wallet-top-ups?page=1&limit=10&status=PAID`
+
+Successful response:
+
+```json
+{
+  "items": [
+    {
+      "id": "cuid",
+      "reference": "WTU-20260611-21D2901A94816C7A",
+      "amount": "10000",
+      "currency": "IDR",
+      "status": "PAID",
+      "invoiceUrl": "https://checkout-staging.xendit.co/web/6a2ae1bf91a293a99d849ccb",
+      "paidAt": "2026-06-11T16:30:00.000Z",
+      "expiredAt": "2026-06-12T16:26:40.462Z",
+      "createdAt": "2026-06-11T16:26:39.406Z",
+      "updatedAt": "2026-06-11T16:39:38.609Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+---
+
+### Get wallet top-up detail
+
+`GET /api/v1/payments/wallet-top-ups/:id` — **requires JWT**
+
+Headers:
+
+```
+Authorization: Bearer <accessToken>
+```
+
+Behavior:
+
+- Returns only top-ups owned by the authenticated user.
+- Returns `404 Not Found` if the top-up does not exist or belongs to another user.
+
+Successful response:
+
+```json
+{
+  "id": "cuid",
+  "reference": "WTU-20260611-21D2901A94816C7A",
+  "amount": "10000",
+  "currency": "IDR",
+  "status": "PAID",
+  "invoiceUrl": "https://checkout-staging.xendit.co/web/6a2ae1bf91a293a99d849ccb",
+  "paidAt": "2026-06-11T16:30:00.000Z",
+  "expiredAt": "2026-06-12T16:26:40.462Z",
+  "createdAt": "2026-06-11T16:26:39.406Z",
+  "updatedAt": "2026-06-11T16:39:38.609Z"
+}
+```
+
+---
+
+## Xendit local testing
+
+For real Xendit webhook testing on a local machine, expose the local Nest server with ngrok:
+
+```bash
+ngrok http 3000
+```
+
+Set the Xendit invoice paid webhook URL to:
+
+```txt
+https://<your-ngrok-domain>/api/v1/payments/webhooks/xendit
+```
+
+Testing flow:
+
+1. Start the API with `pnpm run start:dev`.
+2. Start ngrok and confirm it forwards to the same port as the API.
+3. Configure the Xendit invoice webhook URL and callback token in the Xendit dashboard.
+4. Create a top-up invoice with `POST /api/v1/payments/wallet-top-ups`.
+5. Open the returned `invoiceUrl` and complete a test payment in the Xendit checkout page.
+6. Check `GET /api/v1/payments/wallet-top-ups` and `GET /api/v1/wallets/me`.
+
+Debugging tools:
+
+- Nest logs appear in the terminal running `pnpm run start:dev`.
+- ngrok request inspection is available at `http://127.0.0.1:4040`.
+- A webhook that fails DTO/service validation returns a JSON error response visible in ngrok inspector.
+
+Manual webhook simulation:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/payments/webhooks/xendit \
+  -H "Content-Type: application/json" \
+  -H "x-callback-token: <XENDIT_WEBHOOK_TOKEN>" \
+  -d '{
+    "id": "manual-test-invoice-id",
+    "external_id": "WTU-20260611-21D2901A94816C7A",
+    "status": "PAID",
+    "amount": 10000,
+    "paid_amount": 10000,
+    "currency": "IDR",
+    "paid_at": "2026-06-11T16:30:00.000Z"
+  }'
+```
+
+The `external_id` must match an existing local `WalletTopUp.reference`.
 
 ---
 

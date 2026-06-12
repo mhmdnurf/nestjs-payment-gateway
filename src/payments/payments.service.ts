@@ -107,9 +107,11 @@ export class PaymentsService {
 
   async handleXenditInvoiceWebhook(
     callbackToken: string | undefined,
-    dto: XenditInvoiceWebhookDto,
+    body: Record<string, unknown>,
   ): Promise<XenditWebhookResponseDto> {
     this.xenditService.verifyCallbackToken(callbackToken);
+
+    const dto = this.parseXenditInvoiceWebhook(body);
 
     const status = dto.status.toUpperCase();
 
@@ -363,5 +365,32 @@ export class PaymentsService {
         'Xendit currency does not match top-up currency',
       );
     }
+  }
+
+  private parseXenditInvoiceWebhook(
+    body: Record<string, unknown>,
+  ): XenditInvoiceWebhookDto {
+    if (typeof body.id !== 'string') {
+      throw new BadRequestException('Xendit invoice id is required');
+    }
+
+    if (typeof body.external_id !== 'string') {
+      throw new BadRequestException('Xendit external_id is required');
+    }
+
+    if (typeof body.status !== 'string') {
+      throw new BadRequestException('Xendit status is required');
+    }
+
+    return {
+      id: body.id,
+      external_id: body.external_id,
+      status: body.status,
+      amount: typeof body.amount === 'number' ? body.amount : undefined,
+      paid_amount:
+        typeof body.paid_amount === 'number' ? body.paid_amount : undefined,
+      currency: typeof body.currency === 'string' ? body.currency : undefined,
+      paid_at: typeof body.paid_at === 'string' ? body.paid_at : undefined,
+    };
   }
 }

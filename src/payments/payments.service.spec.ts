@@ -322,4 +322,70 @@ describe('PaymentsService', () => {
       data: { status: 'FAILED' },
     });
   });
+
+  it('ignores extra Xendit webhook fields and credits wallet', async () => {
+    const paidAt = '2026-06-11T11:30:00.000Z';
+
+    tx.walletTopUp.findUnique.mockResolvedValue({
+      id: 'topup-1',
+      userId: 'user-1',
+      amount: new Prisma.Decimal(50000),
+      currency: 'IDR',
+      status: 'PENDING',
+      reference: 'WTU-20260611-ABC123',
+    });
+
+    tx.walletTopUp.updateMany.mockResolvedValue({ count: 1 });
+
+    tx.wallet.update.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(150000),
+    });
+
+    tx.walletTransaction.create.mockResolvedValue({
+      id: 'wallet-transaction-1',
+    });
+
+    const result = await service.handleXenditInvoiceWebhook('callback-token', {
+      id: 'xendit-invoice-1',
+      external_id: 'WTU-20260611-ABC123',
+      status: 'PAID',
+      amount: 50000,
+      paid_amount: 50000,
+      currency: 'IDR',
+      paid_at: paidAt,
+
+      payment_id: 'payment-id-1',
+      payment_method_id: 'payment-method-id-1',
+      payment_details: {
+        source: 'CREDIT_CARD',
+      },
+      credit_card_token: 'credit-card-token-1',
+      credit_card_charge_id: 'credit-card-charge-1',
+      user_id: 'xendit-user-1',
+      payment_method: 'CREDIT_CARD',
+      merchant_name: 'Xendit',
+    });
+
+    expect(result).toEqual({
+      received: true,
+      credited: true,
+      status: 'PAID',
+    });
+
+    expect(tx.walletTopUp.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'topup-1',
+        status: 'PENDING',
+      },
+      data: {
+        status: 'PAID',
+        xenditInvoiceId: 'xendit-invoice-1',
+        paidAt: new Date(paidAt),
+      },
+    });
+
+    expect(tx.wallet.update).toHaveBeenCalled();
+    expect(tx.walletTransaction.create).toHaveBeenCalled();
+  });
 });
