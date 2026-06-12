@@ -293,4 +293,33 @@ describe('PaymentsService', () => {
       status: 'EXPIRED',
     });
   });
+
+  it('marks wallet top-up as FAILED when Xendit invoice creation fails', async () => {
+    const xenditError = new Error('Xendit unavailable');
+
+    prisma.user.findUnique.mockResolvedValue({
+      email: 'user@example.com',
+    });
+
+    prisma.walletTopUp.create.mockResolvedValue({
+      id: 'topup-1',
+      reference: 'WTU-20260612-ABC123',
+      amount: new Prisma.Decimal(50000),
+      currency: 'IDR',
+      status: 'PENDING',
+    });
+
+    xenditService.createInvoice.mockRejectedValue(xenditError);
+
+    await expect(
+      service.createWalletTopUp('user-1', {
+        amount: 50000,
+      }),
+    ).rejects.toThrow('Xendit unavailable');
+
+    expect(prisma.walletTopUp.update).toHaveBeenCalledWith({
+      where: { id: 'topup-1' },
+      data: { status: 'FAILED' },
+    });
+  });
 });

@@ -61,39 +61,48 @@ export class PaymentsService {
       },
     });
 
-    const invoice = await this.xenditService.createInvoice({
-      externalId: topUp.reference,
-      amount: dto.amount,
-      payerEmail: user.email,
-      description: `Wallet top up ${topUp.reference}`,
-      currency: 'IDR',
-    });
+    try {
+      const invoice = await this.xenditService.createInvoice({
+        externalId: topUp.reference,
+        amount: dto.amount,
+        payerEmail: user.email,
+        description: `Wallet top up ${topUp.reference}`,
+        currency: 'IDR',
+      });
 
-    const updatedTopUp = await this.prisma.walletTopUp.update({
-      where: { id: topUp.id },
-      data: {
-        xenditInvoiceId: invoice.id,
-        xenditInvoiceUrl: invoice.invoiceUrl,
-        expiredAt: invoice.expiryDate ? new Date(invoice.expiryDate) : null,
-      },
-      select: {
-        id: true,
-        reference: true,
-        amount: true,
-        currency: true,
-        status: true,
-        xenditInvoiceUrl: true,
-      },
-    });
+      const updatedTopUp = await this.prisma.walletTopUp.update({
+        where: { id: topUp.id },
+        data: {
+          xenditInvoiceId: invoice.id,
+          xenditInvoiceUrl: invoice.invoiceUrl,
+          expiredAt: invoice.expiryDate ? new Date(invoice.expiryDate) : null,
+        },
+        select: {
+          id: true,
+          reference: true,
+          amount: true,
+          currency: true,
+          status: true,
+          xenditInvoiceUrl: true,
+        },
+      });
 
-    return {
-      id: updatedTopUp.id,
-      reference: updatedTopUp.reference,
-      status: updatedTopUp.status,
-      amount: updatedTopUp.amount.toString(),
-      currency: updatedTopUp.currency,
-      invoiceUrl: updatedTopUp.xenditInvoiceUrl!,
-    };
+      return {
+        id: updatedTopUp.id,
+        reference: updatedTopUp.reference,
+        status: updatedTopUp.status,
+        amount: updatedTopUp.amount.toString(),
+        currency: updatedTopUp.currency,
+        invoiceUrl: updatedTopUp.xenditInvoiceUrl!,
+      };
+    } catch (error) {
+      await this.prisma.walletTopUp.update({
+        where: { id: topUp.id },
+        data: { status: 'FAILED' },
+      });
+
+      throw error;
+    }
   }
 
   async handleXenditInvoiceWebhook(
@@ -168,6 +177,8 @@ export class PaymentsService {
       if (topUp.status !== 'PENDING') {
         throw new BadRequestException('Wallet top-up is not payable');
       }
+
+      this.assertWebhookPaymentMatchesTopUp(dto, topUp);
 
       const paidTopUp = await tx.walletTopUp.updateMany({
         where: {
@@ -244,7 +255,7 @@ export class PaymentsService {
       amount: item.amount.toString(),
       currency: item.currency,
       status: item.status,
-      invoiceUrl: item.xenditInvoiceUrl ?? '',
+      invoiceUrl: item.xenditInvoiceUrl,
       paidAt: item.paidAt,
       expiredAt: item.expiredAt,
       createdAt: item.createdAt,
@@ -326,5 +337,31 @@ export class PaymentsService {
     }
 
     return this.mapWalletTopUp(topUp);
+  }
+
+  private assertWebhookPaymentMatchesTopUp(
+    dto: XenditInvoiceWebhookDto,
+    topUp: {
+      amount: Prisma.Decimal;
+      currency: string;
+    },
+  ): void {
+    const paidAmount = dto.paid_amount ?? dto.amount;
+
+    if (paidAmount === undefined) {
+      throw new BadRequestException('Xendit paid amount is missing');
+    }
+
+    if (!new Prisma.Decimal(paidAmount).equals(topUp.amount)) {
+      throw new BadRequestException(
+        'Xendit paid amount does not match top-up amount',
+      );
+    }
+
+    if (dto.currency && dto.currency !== topUp.currency) {
+      throw new BadRequestException(
+        'Xendit currency does not match top-up currency',
+      );
+    }
   }
 }

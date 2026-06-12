@@ -4,7 +4,7 @@ export class WalletTopUpItemDto {
   amount!: string;
   currency!: string;
   status!: string;
-  invoiceUrl!: string;
+  invoiceUrl!: string | null;
   paidAt!: Date | null;
   expiredAt!: Date | null;
   createdAt!: Date;
