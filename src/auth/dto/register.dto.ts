@@ -47,6 +47,7 @@ export class RegisterResponseDto {
   email!: string;
   @ApiProperty({
     example: 'Muhammad Nurfatkhur Rahman',
+    nullable: true,
   })
   name!: string | null;
   @ApiProperty({

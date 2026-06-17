@@ -20,17 +20,22 @@ function formatValidationErrors(errors: ValidationError[]) {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.setGlobalPrefix('api/v1', {});
+
   const config = new DocumentBuilder()
     .setTitle('Payment API Docs')
-    .setDescription('This is the description')
+    .setDescription('Authentication and payment API documentation')
     .setVersion('1.0.0')
+    .addTag('auth')
+    .addTag('users')
+    .addTag('wallets')
     .addTag('payments')
+    .addTag('health')
+    .addBearerAuth()
     .build();
 
   const documentFactory = () => SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, documentFactory);
-
-  app.setGlobalPrefix('api/v1', {});
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -49,4 +54,4 @@ async function bootstrap() {
   );
   await app.listen(process.env.PORT ?? 3000);
 }
-bootstrap();
+void bootstrap();
