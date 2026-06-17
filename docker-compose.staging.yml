@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env.staging
+    command: >
+      sh -c "node_modules/.bin/prisma migrate deploy && node dist/src/main.js"
