@@ -41,15 +41,34 @@ import {
 import { ListSessionsResponseDto } from './dto/session-item.dto';
 import { RevokeSessionResponseDto } from './dto/revoke-session.dto';
 import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 type AccessTokenPayload = { sub: string; sessionId: string };
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Register a new user' })
+  @ApiCreatedResponse({
+    description: 'User registered successfully',
+    type: RegisterResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Validation failed',
+  })
+  @ApiConflictResponse({
+    description: 'Email or username already registered',
+  })
   async registerUser(@Body() data: RegisterDto): Promise<RegisterResponseDto> {
     return this.authService.register(data);
   }
